@@ -1,0 +1,49 @@
+// Copy this file to app_config.dart.
+// Values are injected at build time via --dart-define-from-file=.env
+// See .env.example for the required variables.
+abstract final class AppConfig {
+  static const environment = String.fromEnvironment(
+    'APP_ENV',
+    defaultValue: 'development',
+  );
+
+  static const _supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  static const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  static const _firebaseFunctionsUrl = String.fromEnvironment(
+    'FIREBASE_FUNCTIONS_URL',
+  );
+
+  static String get supabaseUrl =>
+      _requireValue(key: 'SUPABASE_URL', value: _supabaseUrl);
+
+  static String get supabaseAnonKey =>
+      _requireValue(key: 'SUPABASE_ANON_KEY', value: _supabaseAnonKey);
+
+  static String get firebaseFunctionsUrl => _requireValue(
+    key: 'FIREBASE_FUNCTIONS_URL',
+    value: _firebaseFunctionsUrl,
+  );
+
+  static void validate() {
+    _validateUrl('SUPABASE_URL', supabaseUrl);
+    _validateUrl('FIREBASE_FUNCTIONS_URL', firebaseFunctionsUrl);
+  }
+
+  static String _requireValue({required String key, required String value}) {
+    if (value.isNotEmpty) {
+      return value;
+    }
+
+    throw StateError(
+      'Missing required runtime config `$key`. '
+      'Start the app with `--dart-define-from-file=.env` or pass `$key` via `--dart-define`.',
+    );
+  }
+
+  static void _validateUrl(String key, String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      throw StateError('Invalid URL supplied for `$key`: $value');
+    }
+  }
+}

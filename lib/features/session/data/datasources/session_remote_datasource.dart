@@ -1,0 +1,87 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../../core/constants/api_endpoints.dart';
+import '../../../../core/errors/exceptions.dart';
+import '../../../../shared/models/session_model.dart';
+import '../../../../shared/models/ai_event_model.dart';
+
+class SessionRemoteDatasource {
+  final SupabaseClient _supabase;
+
+  const SessionRemoteDatasource(this._supabase);
+
+  Future<SessionModel> createSession({
+    required String activityId,
+    required String userId,
+    required SessionMode mode,
+  }) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.sessionsTable)
+          .insert({
+            'activity_id': activityId,
+            'user_id': userId,
+            'mode': mode.name,
+            'started_at': DateTime.now().toIso8601String(),
+          })
+          .select()
+          .single();
+
+      return SessionModel.fromJson(response);
+    } catch (e) {
+      throw ServerException('Failed to create session: $e');
+    }
+  }
+
+  Future<SessionModel> endSession(String sessionId) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.sessionsTable)
+          .update({'ended_at': DateTime.now().toIso8601String()})
+          .eq('id', sessionId)
+          .select()
+          .single();
+
+      return SessionModel.fromJson(response);
+    } catch (e) {
+      throw ServerException('Failed to end session: $e');
+    }
+  }
+
+  Future<void> updateTranscript(String sessionId, String transcript) async {
+    try {
+      await _supabase
+          .from(ApiEndpoints.sessionsTable)
+          .update({'transcript': transcript})
+          .eq('id', sessionId);
+    } catch (e) {
+      throw ServerException('Failed to update transcript: $e');
+    }
+  }
+
+  Stream<List<AiEventModel>> subscribeToEvents(String sessionId) {
+    return _supabase
+        .from(ApiEndpoints.aiEventsTable)
+        .stream(primaryKey: ['id'])
+        .eq('session_id', sessionId)
+        .order('created_at')
+        .map((data) => data
+            .map((json) => AiEventModel.fromJson(json))
+            .toList());
+  }
+
+  Future<List<AiEventModel>> getSessionEvents(String sessionId) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.aiEventsTable)
+          .select()
+          .eq('session_id', sessionId)
+          .order('created_at');
+
+      return (response as List)
+          .map((json) => AiEventModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw ServerException('Failed to fetch session events: $e');
+    }
+  }
+}

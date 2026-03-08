@@ -1,0 +1,15 @@
+targets:
+  $default:
+    builders:
+      freezed:
+        generate_for:
+          include:
+            - lib/shared/models/**
+      json_serializable:
+        generate_for:
+          include:
+            - lib/shared/models/**
+      riverpod_generator:
+        generate_for:
+          include:
+            - lib/**
