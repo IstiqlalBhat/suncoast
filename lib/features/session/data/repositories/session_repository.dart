@@ -6,9 +6,8 @@ import '../datasources/session_remote_datasource.dart';
 class SessionRepository {
   final SessionRemoteDatasource _remoteDatasource;
 
-  const SessionRepository({
-    required SessionRemoteDatasource remoteDatasource,
-  }) : _remoteDatasource = remoteDatasource;
+  const SessionRepository({required SessionRemoteDatasource remoteDatasource})
+    : _remoteDatasource = remoteDatasource;
 
   Future<Result<SessionModel>> createSession({
     required String activityId,
@@ -36,7 +35,31 @@ class SessionRepository {
     }
   }
 
-  Future<Result<void>> updateTranscript(String sessionId, String transcript) async {
+  Future<Result<SessionModel>> getSession(String sessionId) async {
+    try {
+      final session = await _remoteDatasource.getSession(sessionId);
+      return Result.success(session);
+    } catch (e) {
+      return Result.failure('Failed to fetch session: $e');
+    }
+  }
+
+  Future<Result<SessionModel>> updateSession(
+    String sessionId,
+    Map<String, dynamic> fields,
+  ) async {
+    try {
+      final session = await _remoteDatasource.updateSession(sessionId, fields);
+      return Result.success(session);
+    } catch (e) {
+      return Result.failure('Failed to update session: $e');
+    }
+  }
+
+  Future<Result<void>> updateTranscript(
+    String sessionId,
+    String transcript,
+  ) async {
     try {
       await _remoteDatasource.updateTranscript(sessionId, transcript);
       return Result.success(null);

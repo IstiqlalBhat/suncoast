@@ -11,23 +11,32 @@ class SummaryRepository {
   const SummaryRepository({
     required SummaryRemoteDatasource remoteDatasource,
     required ApiClient apiClient,
-  })  : _remoteDatasource = remoteDatasource,
-        _apiClient = apiClient;
+  }) : _remoteDatasource = remoteDatasource,
+       _apiClient = apiClient;
 
   Future<Result<SessionSummaryModel>> generateAndFetchSummary(
     String sessionId,
   ) async {
     try {
       // Call Firebase Cloud Function to generate summary
-      await _apiClient.callFunction(
+      final response = await _apiClient.callFunction(
         ApiEndpoints.generateSummary,
         data: {'sessionId': sessionId},
       );
 
+      final inlineSummary = response['summary'];
+      if (inlineSummary is Map) {
+        return Result.success(
+          SessionSummaryModel.fromJson(
+            Map<String, dynamic>.from(inlineSummary),
+          ),
+        );
+      }
+
       // Fetch the generated summary from Supabase
       final summary = await _remoteDatasource.getSummary(sessionId);
       if (summary == null) {
-        return Result.failure('Summary not found after generation');
+        return const Result.failure('Summary not found after generation');
       }
       return Result.success(summary);
     } catch (e) {
@@ -39,11 +48,20 @@ class SummaryRepository {
     try {
       final summary = await _remoteDatasource.getSummary(sessionId);
       if (summary == null) {
-        return Result.failure('Summary not found');
+        return const Result.failure('Summary not found');
       }
       return Result.success(summary);
     } catch (e) {
       return Result.failure('Failed to fetch summary: $e');
+    }
+  }
+
+  Future<Result<void>> confirmSummary(String sessionId) async {
+    try {
+      await _remoteDatasource.confirmSummary(sessionId);
+      return const Result.success(null);
+    } catch (e) {
+      return Result.failure('Failed to confirm summary: $e');
     }
   }
 }

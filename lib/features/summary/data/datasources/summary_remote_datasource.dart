@@ -22,4 +22,15 @@ class SummaryRemoteDatasource {
       throw ServerException('Failed to fetch summary: $e');
     }
   }
+
+  Future<void> confirmSummary(String sessionId) async {
+    try {
+      await _supabase
+          .from(ApiEndpoints.sessionSummariesTable)
+          .update({'confirmed_at': DateTime.now().toIso8601String()})
+          .eq('session_id', sessionId);
+    } catch (e) {
+      throw ServerException('Failed to confirm summary: $e');
+    }
+  }
 }

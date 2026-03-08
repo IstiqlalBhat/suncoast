@@ -17,7 +17,8 @@ class PassiveListenScreen extends ConsumerStatefulWidget {
   const PassiveListenScreen({super.key, required this.activityId});
 
   @override
-  ConsumerState<PassiveListenScreen> createState() => _PassiveListenScreenState();
+  ConsumerState<PassiveListenScreen> createState() =>
+      _PassiveListenScreenState();
 }
 
 class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
@@ -25,10 +26,12 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(activeSessionProvider.notifier).startSession(
-        activityId: widget.activityId,
-        mode: SessionMode.passive,
-      );
+      ref
+          .read(activeSessionProvider.notifier)
+          .startSession(
+            activityId: widget.activityId,
+            mode: SessionMode.passive,
+          );
     });
   }
 
@@ -68,18 +71,76 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
               ),
               const SizedBox(height: AppDimensions.paddingS),
 
-              // Status text
+              if (sessionState.activityTitle.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppDimensions.paddingM,
+                  ),
+                  child: Text(
+                    sessionState.activityTitle,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              const SizedBox(height: AppDimensions.paddingS),
+
               Text(
                 sessionState.isRecording
-                    ? (sessionState.isMuted ? AppStrings.mute : AppStrings.listening)
-                    : AppStrings.processing,
+                    ? '${sessionState.isMuted ? 'Muted' : 'Recording'} · $timerText'
+                    : 'Finalizing session...',
                 style: TextStyle(
                   color: AppColors.passive.withValues(alpha: 0.8),
                   fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              if (sessionState.isProcessing && sessionState.isRecording)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Analyzing latest observations...',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
               const SizedBox(height: AppDimensions.paddingM),
+
+              if (sessionState.error != null) ...[
+                Container(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: AppDimensions.paddingM,
+                  ),
+                  padding: const EdgeInsets.all(AppDimensions.paddingM),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: AppColors.error,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          sessionState.error!,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppDimensions.paddingM),
+              ],
 
               // Transcript preview
               if (sessionState.transcript.isNotEmpty)
@@ -109,20 +170,22 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
               // Event feed
               Expanded(
                 child: sessionId != null
-                    ? ref.watch(sessionEventsProvider(sessionId)).when(
-                        data: (events) => EventFeed(events: events),
-                        loading: () => const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.passive,
-                          ),
-                        ),
-                        error: (e, _) => Center(
-                          child: Text(
-                            'Error loading events',
-                            style: TextStyle(color: AppColors.error),
-                          ),
-                        ),
-                      )
+                    ? ref
+                          .watch(sessionEventsProvider(sessionId))
+                          .when(
+                            data: (events) => EventFeed(events: events),
+                            loading: () => const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.passive,
+                              ),
+                            ),
+                            error: (e, _) => const Center(
+                              child: Text(
+                                'Error loading events',
+                                style: TextStyle(color: AppColors.error),
+                              ),
+                            ),
+                          )
                     : const EventFeed(events: []),
               ),
 
@@ -135,9 +198,12 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                     // Mute button
                     _ControlButton(
                       icon: sessionState.isMuted ? Icons.mic_off : Icons.mic,
-                      label: sessionState.isMuted ? AppStrings.unmute : AppStrings.mute,
+                      label: sessionState.isMuted
+                          ? AppStrings.unmute
+                          : AppStrings.mute,
                       color: AppColors.passive,
-                      onTap: () => ref.read(activeSessionProvider.notifier).toggleMute(),
+                      onTap: () =>
+                          ref.read(activeSessionProvider.notifier).toggleMute(),
                     ),
                     // End session button
                     _ControlButton(
@@ -158,7 +224,9 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
   }
 
   Future<void> _endSession(BuildContext context) async {
-    final sessionId = await ref.read(activeSessionProvider.notifier).endSession();
+    final sessionId = await ref
+        .read(activeSessionProvider.notifier)
+        .endSession();
     if (sessionId != null && context.mounted) {
       context.go('/session/${widget.activityId}/summary?sessionId=$sessionId');
     }
@@ -202,10 +270,7 @@ class _ControlButton extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
+          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
       ],
     );

@@ -1,17 +1,23 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import '../../../../shared/models/activity_model.dart';
 import '../../../../shared/models/session_model.dart';
 import '../../../../shared/models/ai_event_model.dart';
 import '../../../../shared/providers/app_providers.dart';
 import '../../../../shared/providers/auth_providers.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../services/audio/audio_recording_service.dart';
+import '../../../dashboard/data/repositories/activity_repository.dart';
+import '../../../dashboard/presentation/providers/dashboard_provider.dart';
 import '../../data/datasources/session_remote_datasource.dart';
 import '../../data/repositories/session_repository.dart';
 
-final sessionRemoteDatasourceProvider = Provider<SessionRemoteDatasource>((ref) {
+final sessionRemoteDatasourceProvider = Provider<SessionRemoteDatasource>((
+  ref,
+) {
   return SessionRemoteDatasource(ref.watch(supabaseClientProvider));
 });
 
@@ -25,14 +31,16 @@ final audioRecordingServiceProvider = Provider<AudioRecordingService>((ref) {
   return AudioRecordingService();
 });
 
-final activeSessionProvider = StateNotifierProvider<ActiveSessionNotifier, ActiveSessionState>((ref) {
-  return ActiveSessionNotifier(
-    repository: ref.watch(sessionRepositoryProvider),
-    apiClient: ref.watch(apiClientProvider),
-    audioService: ref.watch(audioRecordingServiceProvider),
-    userId: ref.watch(currentUserProvider)?.id ?? '',
-  );
-});
+final activeSessionProvider =
+    StateNotifierProvider<ActiveSessionNotifier, ActiveSessionState>((ref) {
+      return ActiveSessionNotifier(
+        repository: ref.watch(sessionRepositoryProvider),
+        activityRepository: ref.watch(activityRepositoryProvider),
+        apiClient: ref.watch(apiClientProvider),
+        audioService: ref.watch(audioRecordingServiceProvider),
+        userId: ref.watch(currentUserProvider)?.id ?? '',
+      );
+    });
 
 class ActiveSessionState {
   final SessionModel? session;
@@ -44,6 +52,8 @@ class ActiveSessionState {
   final String? error;
   final Duration elapsed;
   final String? aiResponse;
+  final String activityTitle;
+  final String activityContext;
 
   const ActiveSessionState({
     this.session,
@@ -55,6 +65,8 @@ class ActiveSessionState {
     this.error,
     this.elapsed = Duration.zero,
     this.aiResponse,
+    this.activityTitle = '',
+    this.activityContext = 'Field session',
   });
 
   ActiveSessionState copyWith({
@@ -67,6 +79,8 @@ class ActiveSessionState {
     String? error,
     Duration? elapsed,
     String? aiResponse,
+    String? activityTitle,
+    String? activityContext,
   }) {
     return ActiveSessionState(
       session: session ?? this.session,
@@ -78,16 +92,21 @@ class ActiveSessionState {
       error: error,
       elapsed: elapsed ?? this.elapsed,
       aiResponse: aiResponse ?? this.aiResponse,
+      activityTitle: activityTitle ?? this.activityTitle,
+      activityContext: activityContext ?? this.activityContext,
     );
   }
 }
 
 class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   final SessionRepository _repository;
+  final ActivityRepository _activityRepository;
   final ApiClient _apiClient;
   final AudioRecordingService _audioService;
   final String _userId;
   final _logger = Logger();
+  static const _transcriptionInterval = Duration(seconds: 4);
+  static const _minCharsBeforeAiProcessing = 120;
 
   Timer? _timer;
   Timer? _transcriptionTimer;
@@ -95,22 +114,29 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   StreamSubscription<List<int>>? _audioStreamSub;
   final List<int> _audioBuffer = [];
   String _lastProcessedTranscript = '';
+  bool _isAiProcessing = false;
 
   ActiveSessionNotifier({
     required SessionRepository repository,
+    required ActivityRepository activityRepository,
     required ApiClient apiClient,
     required AudioRecordingService audioService,
     required String userId,
-  })  : _repository = repository,
-        _apiClient = apiClient,
-        _audioService = audioService,
-        _userId = userId,
-        super(const ActiveSessionState());
+  }) : _repository = repository,
+       _activityRepository = activityRepository,
+       _apiClient = apiClient,
+       _audioService = audioService,
+       _userId = userId,
+       super(const ActiveSessionState());
 
   Future<void> startSession({
     required String activityId,
     required SessionMode mode,
   }) async {
+    state = const ActiveSessionState();
+
+    await _loadActivityContext(activityId);
+
     final result = await _repository.createSession(
       activityId: activityId,
       userId: _userId,
@@ -122,6 +148,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         state = state.copyWith(
           session: session,
           isRecording: true,
+          error: null,
         );
         _startTimer();
         _startAudioPipeline();
@@ -130,6 +157,38 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         state = state.copyWith(error: message);
       },
     );
+  }
+
+  Future<void> _loadActivityContext(String activityId) async {
+    final result = await _activityRepository.getActivity(activityId);
+    result.when(
+      success: (activity) {
+        state = state.copyWith(
+          activityTitle: activity.title,
+          activityContext: _buildActivityContext(activity),
+        );
+      },
+      failure: (message, code) {
+        state = state.copyWith(activityContext: 'Field session');
+      },
+    );
+  }
+
+  String _buildActivityContext(ActivityModel activity) {
+    final contextParts = <String>[
+      'Activity: ${activity.title}',
+      'Mode: ${activity.type.displayName}',
+    ];
+
+    if (activity.description?.trim().isNotEmpty ?? false) {
+      contextParts.add('Description: ${activity.description!.trim()}');
+    }
+
+    if (activity.location?.trim().isNotEmpty ?? false) {
+      contextParts.add('Location: ${activity.location!.trim()}');
+    }
+
+    return contextParts.join('\n');
   }
 
   Future<void> _startAudioPipeline() async {
@@ -162,7 +221,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
       // Send audio chunks to Deepgram every 3 seconds
       _transcriptionTimer = Timer.periodic(
-        const Duration(seconds: 3),
+        _transcriptionInterval,
         (_) => _sendAudioChunk(),
       );
 
@@ -174,7 +233,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   Future<void> _sendAudioChunk() async {
-    if (_audioBuffer.isEmpty || state.isMuted) return;
+    if (_audioBuffer.isEmpty || state.isMuted || state.session == null) return;
 
     // Copy and clear buffer
     final chunk = Uint8List.fromList(_audioBuffer);
@@ -192,12 +251,10 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           state = state.copyWith(transcript: newTranscript);
 
           // Update transcript in Supabase
-          if (state.session != null) {
-            _repository.updateTranscript(state.session!.id, newTranscript);
-          }
+          await _repository.updateTranscript(state.session!.id, newTranscript);
 
-          // Process with Gemini every ~15 seconds of new content
-          _maybeProcessWithAI();
+          // Process with Gemini after a meaningful amount of new content arrives.
+          await _maybeProcessWithAI();
         }
       }
     } catch (e) {
@@ -206,12 +263,25 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
   }
 
-  Future<void> _maybeProcessWithAI() async {
-    // Only process if we have enough new content (>50 chars since last processing)
-    final newContent = state.transcript.substring(_lastProcessedTranscript.length);
-    if (newContent.length < 50) return;
+  Future<void> _maybeProcessWithAI({bool force = false}) async {
+    if (_isAiProcessing || state.session == null) return;
 
-    _lastProcessedTranscript = state.transcript;
+    final transcript = state.transcript.trim();
+    if (transcript.isEmpty) return;
+
+    final safePreviousLength = math.min(
+      _lastProcessedTranscript.length,
+      transcript.length,
+    );
+    final newContent = transcript.substring(safePreviousLength);
+
+    if (!force && newContent.length < _minCharsBeforeAiProcessing) {
+      return;
+    }
+
+    final previousTranscript = _lastProcessedTranscript;
+    _lastProcessedTranscript = transcript;
+    _isAiProcessing = true;
 
     try {
       state = state.copyWith(isProcessing: true);
@@ -219,16 +289,19 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       await _apiClient.callFunction(
         'processTranscript',
         data: {
-          'transcript': state.transcript,
-          'activityContext': 'Field session',
-          'sessionId': state.session?.id,
+          'transcript': transcript,
+          'activityContext': state.activityContext,
+          'sessionId': state.session!.id,
         },
       );
 
       state = state.copyWith(isProcessing: false);
     } catch (e) {
+      _lastProcessedTranscript = previousTranscript;
       _logger.e('AI processing failed: $e');
       state = state.copyWith(isProcessing: false);
+    } finally {
+      _isAiProcessing = false;
     }
   }
 
@@ -252,7 +325,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       state = state.copyWith(
         isProcessing: false,
         aiResponse: aiMessage,
-        transcript: '${state.transcript}\nUser: $message\nAI: $aiMessage'.trim(),
+        transcript: '${state.transcript}\nUser: $message\nAI: $aiMessage'
+            .trim(),
       );
 
       return aiMessage;
@@ -291,6 +365,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   Future<String?> endSession() async {
     if (state.session == null) return null;
+    final sessionId = state.session!.id;
 
     // Stop audio pipeline
     _transcriptionTimer?.cancel();
@@ -307,16 +382,20 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
 
     // Process final transcript with AI if needed
-    if (state.transcript.isNotEmpty && state.transcript != _lastProcessedTranscript) {
-      await _maybeProcessWithAI();
+    if (state.transcript.isNotEmpty &&
+        state.transcript != _lastProcessedTranscript) {
+      await _maybeProcessWithAI(force: true);
     }
 
-    final result = await _repository.endSession(state.session!.id);
-    final sessionId = state.session!.id;
+    final result = await _repository.endSession(sessionId);
 
     result.when(
-      success: (_) {
-        state = state.copyWith(isProcessing: false);
+      success: (session) {
+        state = state.copyWith(
+          session: session,
+          isProcessing: false,
+          audioLevel: 0,
+        );
       },
       failure: (message, _) {
         state = state.copyWith(isProcessing: false, error: message);
@@ -338,9 +417,18 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   void appendTranscript(String text) {
-    state = state.copyWith(
-      transcript: '${state.transcript} $text'.trim(),
-    );
+    state = state.copyWith(transcript: '${state.transcript} $text'.trim());
+  }
+
+  void reset() {
+    _timer?.cancel();
+    _transcriptionTimer?.cancel();
+    _audioStreamSub?.cancel();
+    _amplitudeSub?.cancel();
+    _audioBuffer.clear();
+    _lastProcessedTranscript = '';
+    _isAiProcessing = false;
+    state = const ActiveSessionState();
   }
 
   void _startTimer() {
@@ -362,9 +450,23 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 }
 
-final sessionEventsProvider = StreamProvider.family<List<AiEventModel>, String>((ref, sessionId) {
+final sessionEventsProvider = StreamProvider.family<List<AiEventModel>, String>(
+  (ref, sessionId) {
+    final repository = ref.watch(sessionRepositoryProvider);
+    return repository.subscribeToEvents(sessionId);
+  },
+);
+
+final sessionDetailsProvider = FutureProvider.family<SessionModel, String>((
+  ref,
+  sessionId,
+) async {
   final repository = ref.watch(sessionRepositoryProvider);
-  return repository.subscribeToEvents(sessionId);
+  final result = await repository.getSession(sessionId);
+  return result.when(
+    success: (session) => session,
+    failure: (message, _) => throw Exception(message),
+  );
 });
 
 final sessionTimerProvider = Provider<String>((ref) {

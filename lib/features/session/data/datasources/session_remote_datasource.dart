@@ -34,16 +34,46 @@ class SessionRemoteDatasource {
 
   Future<SessionModel> endSession(String sessionId) async {
     try {
+      return updateSession(sessionId, {
+        'ended_at': DateTime.now().toIso8601String(),
+        'status': 'ended',
+        'ended_reason': 'user_completed',
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      throw ServerException('Failed to end session: $e');
+    }
+  }
+
+  Future<SessionModel> getSession(String sessionId) async {
+    try {
       final response = await _supabase
           .from(ApiEndpoints.sessionsTable)
-          .update({'ended_at': DateTime.now().toIso8601String()})
+          .select()
+          .eq('id', sessionId)
+          .single();
+
+      return SessionModel.fromJson(response);
+    } catch (e) {
+      throw ServerException('Failed to fetch session: $e');
+    }
+  }
+
+  Future<SessionModel> updateSession(
+    String sessionId,
+    Map<String, dynamic> fields,
+  ) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.sessionsTable)
+          .update(fields)
           .eq('id', sessionId)
           .select()
           .single();
 
       return SessionModel.fromJson(response);
     } catch (e) {
-      throw ServerException('Failed to end session: $e');
+      throw ServerException('Failed to update session: $e');
     }
   }
 
@@ -51,7 +81,10 @@ class SessionRemoteDatasource {
     try {
       await _supabase
           .from(ApiEndpoints.sessionsTable)
-          .update({'transcript': transcript})
+          .update({
+            'transcript': transcript,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
           .eq('id', sessionId);
     } catch (e) {
       throw ServerException('Failed to update transcript: $e');
@@ -64,9 +97,9 @@ class SessionRemoteDatasource {
         .stream(primaryKey: ['id'])
         .eq('session_id', sessionId)
         .order('created_at')
-        .map((data) => data
-            .map((json) => AiEventModel.fromJson(json))
-            .toList());
+        .map(
+          (data) => data.map((json) => AiEventModel.fromJson(json)).toList(),
+        );
   }
 
   Future<List<AiEventModel>> getSessionEvents(String sessionId) async {
