@@ -2,13 +2,20 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { logFunctionError } from "../utils/logging";
+import { createClient } from "@supabase/supabase-js";
+import { authenticateCallableRequest } from "../utils/auth";
 
 const openaiKey = defineSecret("OPENAI_API_KEY");
+const supabaseUrl = defineSecret("SUPABASE_URL");
+const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
 
 export const openaiTts = onCall(
-  { secrets: [openaiKey] },
+  { secrets: [openaiKey, supabaseUrl, supabaseServiceKey] },
   async (request) => {
-    const { text, voice } = request.data;
+    const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
+    const { user, payload } = await authenticateCallableRequest(request, supabase);
+    const text = typeof payload.text === "string" ? payload.text : "";
+    const voice = typeof payload.voice === "string" ? payload.voice : undefined;
 
     if (!text) {
       throw new HttpsError("invalid-argument", "Text is required");
@@ -26,6 +33,7 @@ export const openaiTts = onCall(
     const selectedVoice = voice || "nova";
 
     logger.info("openaiTts request received", {
+      userId: user.id,
       voice: selectedVoice,
       textLength: typeof text === "string" ? text.length : 0,
     });

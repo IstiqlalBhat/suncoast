@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { logFunctionError } from "../utils/logging";
+import { assertSessionOwnership, authenticateCallableRequest } from "../utils/auth";
 
 const geminiKey = defineSecret("GEMINI_API_KEY");
 const supabaseUrl = defineSecret("SUPABASE_URL");
@@ -24,10 +25,19 @@ export const processTranscript = onCall(
   async (request) => {
     const genAI = new GoogleGenerativeAI(geminiKey.value());
     const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
-    const { transcript, activityContext, sessionId } = request.data;
+    const { user, payload } = await authenticateCallableRequest(request, supabase);
+    const transcript = typeof payload.transcript === "string" ? payload.transcript : "";
+    const activityContext =
+      typeof payload.activityContext === "string" ? payload.activityContext : undefined;
+    const sessionId =
+      typeof payload.sessionId === "string" ? payload.sessionId : undefined;
 
     if (!transcript) {
       throw new HttpsError("invalid-argument", "Transcript is required");
+    }
+
+    if (sessionId) {
+      await assertSessionOwnership(supabase, sessionId, user.id);
     }
 
     logger.info("processTranscript request received", {
@@ -88,6 +98,7 @@ Respond with ONLY valid JSON: { "events": [...] }`;
     } catch (error) {
       logFunctionError("processTranscript", error, {
         hasSessionId: Boolean(sessionId),
+        userId: user.id,
       });
       throw new HttpsError("internal", "Failed to process transcript");
     }

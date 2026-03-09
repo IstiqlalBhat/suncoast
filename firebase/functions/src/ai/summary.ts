@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { logFunctionError } from "../utils/logging";
+import { assertSessionOwnership, authenticateCallableRequest } from "../utils/auth";
 
 const geminiKey = defineSecret("GEMINI_API_KEY");
 const supabaseUrl = defineSecret("SUPABASE_URL");
@@ -50,11 +51,14 @@ export const generateSummary = onCall(
   async (request) => {
     const genAI = new GoogleGenerativeAI(geminiKey.value());
     const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
-    const { sessionId } = request.data;
+    const { user, payload } = await authenticateCallableRequest(request, supabase);
+    const sessionId = typeof payload.sessionId === "string" ? payload.sessionId : "";
 
     if (!sessionId) {
       throw new HttpsError("invalid-argument", "Session ID is required");
     }
+
+    await assertSessionOwnership(supabase, sessionId, user.id);
 
     logger.info("generateSummary request received", {
       sessionId,
@@ -208,7 +212,7 @@ Return valid JSON only. Keep dates in ISO-8601 or null.`;
 
       return { summary };
     } catch (error) {
-      logFunctionError("generateSummary", error, { sessionId });
+      logFunctionError("generateSummary", error, { sessionId, userId: user.id });
       throw new HttpsError("internal", "Summary generation failed");
     }
   }

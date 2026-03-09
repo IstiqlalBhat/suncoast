@@ -19,28 +19,41 @@ CREATE TABLE IF NOT EXISTS organizations (
 );
 
 -- Add foreign key for org_id
-ALTER TABLE profiles
-    ADD CONSTRAINT fk_profiles_org
-    FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fk_profiles_org'
+    ) THEN
+        ALTER TABLE profiles
+            ADD CONSTRAINT fk_profiles_org
+            FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- Enable RLS
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for profiles
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 CREATE POLICY "Users can view own profile"
     ON profiles FOR SELECT
     USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
 CREATE POLICY "Users can update own profile"
     ON profiles FOR UPDATE
     USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
 CREATE POLICY "Users can insert own profile"
     ON profiles FOR INSERT
     WITH CHECK (auth.uid() = id);
 
 -- RLS Policies for organizations
+DROP POLICY IF EXISTS "Org members can view their org" ON organizations;
 CREATE POLICY "Org members can view their org"
     ON organizations FOR SELECT
     USING (
@@ -67,6 +80,35 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW
     EXECUTE FUNCTION handle_new_user();
+
+-- Function to auto-create a personal organization for each profile
+CREATE OR REPLACE FUNCTION handle_new_profile_organization()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_org_id UUID;
+BEGIN
+    IF NEW.org_id IS NULL THEN
+        INSERT INTO organizations (name, settings)
+        VALUES (
+            COALESCE(NULLIF(NEW.name, ''), split_part(NEW.email, '@', 1)) || ' Workspace',
+            '{"bootstrap": true}'::jsonb
+        )
+        RETURNING id INTO v_org_id;
+
+        UPDATE profiles
+        SET org_id = v_org_id
+        WHERE id = NEW.id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_profile_created_organization ON profiles;
+CREATE TRIGGER on_profile_created_organization
+    AFTER INSERT ON profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION handle_new_profile_organization();
 -- Create activities table
 CREATE TABLE IF NOT EXISTS activities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,16 +126,17 @@ CREATE TABLE IF NOT EXISTS activities (
 );
 
 -- Indexes
-CREATE INDEX idx_activities_org_id ON activities(org_id);
-CREATE INDEX idx_activities_assigned_to ON activities(assigned_to);
-CREATE INDEX idx_activities_type ON activities(type);
-CREATE INDEX idx_activities_status ON activities(status);
-CREATE INDEX idx_activities_scheduled_at ON activities(scheduled_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_org_id ON activities(org_id);
+CREATE INDEX IF NOT EXISTS idx_activities_assigned_to ON activities(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_activities_type ON activities(type);
+CREATE INDEX IF NOT EXISTS idx_activities_status ON activities(status);
+CREATE INDEX IF NOT EXISTS idx_activities_scheduled_at ON activities(scheduled_at DESC);
 
 -- Enable RLS
 ALTER TABLE activities ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view org activities" ON activities;
 CREATE POLICY "Users can view org activities"
     ON activities FOR SELECT
     USING (
@@ -101,9 +144,18 @@ CREATE POLICY "Users can view org activities"
         OR assigned_to = auth.uid()
     );
 
+DROP POLICY IF EXISTS "Users can update assigned activities" ON activities;
 CREATE POLICY "Users can update assigned activities"
     ON activities FOR UPDATE
     USING (assigned_to = auth.uid());
+
+DROP POLICY IF EXISTS "Users can create activities" ON activities;
+CREATE POLICY "Users can create activities"
+    ON activities FOR INSERT
+    WITH CHECK (
+        assigned_to = auth.uid()
+        AND org_id IN (SELECT org_id FROM profiles WHERE id = auth.uid())
+    );
 -- Create sessions table
 CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -117,24 +169,32 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- Indexes
-CREATE INDEX idx_sessions_activity_id ON sessions(activity_id);
-CREATE INDEX idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX idx_sessions_started_at ON sessions(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_activity_id ON sessions(activity_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at DESC);
 
 -- Enable RLS
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view own sessions" ON sessions;
 CREATE POLICY "Users can view own sessions"
     ON sessions FOR SELECT
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can create sessions" ON sessions;
 CREATE POLICY "Users can create sessions"
     ON sessions FOR INSERT
     WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can update own sessions" ON sessions;
 CREATE POLICY "Users can update own sessions"
     ON sessions FOR UPDATE
+    USING (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can delete own sessions" ON sessions;
+CREATE POLICY "Users can delete own sessions"
+    ON sessions FOR DELETE
     USING (user_id = auth.uid());
 -- Create AI events table
 CREATE TABLE IF NOT EXISTS ai_events (
@@ -148,20 +208,22 @@ CREATE TABLE IF NOT EXISTS ai_events (
 );
 
 -- Indexes
-CREATE INDEX idx_ai_events_session_id ON ai_events(session_id);
-CREATE INDEX idx_ai_events_type ON ai_events(type);
-CREATE INDEX idx_ai_events_created_at ON ai_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_events_session_id ON ai_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_ai_events_type ON ai_events(type);
+CREATE INDEX IF NOT EXISTS idx_ai_events_created_at ON ai_events(created_at);
 
 -- Enable RLS
 ALTER TABLE ai_events ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view events for own sessions" ON ai_events;
 CREATE POLICY "Users can view events for own sessions"
     ON ai_events FOR SELECT
     USING (
         session_id IN (SELECT id FROM sessions WHERE user_id = auth.uid())
     );
 
+DROP POLICY IF EXISTS "Service role can insert events" ON ai_events;
 CREATE POLICY "Service role can insert events"
     ON ai_events FOR INSERT
     WITH CHECK (
@@ -169,7 +231,18 @@ CREATE POLICY "Service role can insert events"
     );
 
 -- Enable realtime for ai_events
-ALTER PUBLICATION supabase_realtime ADD TABLE ai_events;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = 'public'
+          AND tablename = 'ai_events'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.ai_events;
+    END IF;
+END $$;
 -- Create media attachments table
 CREATE TABLE IF NOT EXISTS media_attachments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -182,18 +255,20 @@ CREATE TABLE IF NOT EXISTS media_attachments (
 );
 
 -- Indexes
-CREATE INDEX idx_media_attachments_session_id ON media_attachments(session_id);
+CREATE INDEX IF NOT EXISTS idx_media_attachments_session_id ON media_attachments(session_id);
 
 -- Enable RLS
 ALTER TABLE media_attachments ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view own media" ON media_attachments;
 CREATE POLICY "Users can view own media"
     ON media_attachments FOR SELECT
     USING (
         session_id IN (SELECT id FROM sessions WHERE user_id = auth.uid())
     );
 
+DROP POLICY IF EXISTS "Users can insert media for own sessions" ON media_attachments;
 CREATE POLICY "Users can insert media for own sessions"
     ON media_attachments FOR INSERT
     WITH CHECK (
@@ -215,18 +290,20 @@ CREATE TABLE IF NOT EXISTS session_summaries (
 );
 
 -- Indexes
-CREATE INDEX idx_session_summaries_session_id ON session_summaries(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_summaries_session_id ON session_summaries(session_id);
 
 -- Enable RLS
 ALTER TABLE session_summaries ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view own summaries" ON session_summaries;
 CREATE POLICY "Users can view own summaries"
     ON session_summaries FOR SELECT
     USING (
         session_id IN (SELECT id FROM sessions WHERE user_id = auth.uid())
     );
 
+DROP POLICY IF EXISTS "Service role can insert summaries" ON session_summaries;
 CREATE POLICY "Service role can insert summaries"
     ON session_summaries FOR INSERT
     WITH CHECK (
@@ -248,23 +325,27 @@ CREATE TABLE IF NOT EXISTS user_settings (
 );
 
 -- Indexes
-CREATE INDEX idx_user_settings_user_id ON user_settings(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_settings_user_id ON user_settings(user_id);
 
 -- Enable RLS
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+DROP POLICY IF EXISTS "Users can view own settings" ON user_settings;
 CREATE POLICY "Users can view own settings"
     ON user_settings FOR SELECT
     USING (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can insert own settings" ON user_settings;
 CREATE POLICY "Users can insert own settings"
     ON user_settings FOR INSERT
     WITH CHECK (user_id = auth.uid());
 
+DROP POLICY IF EXISTS "Users can update own settings" ON user_settings;
 CREATE POLICY "Users can update own settings"
     ON user_settings FOR UPDATE
-    USING (user_id = auth.uid());
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
 
 -- Function to auto-create settings on profile creation
 CREATE OR REPLACE FUNCTION handle_new_profile_settings()
@@ -282,6 +363,67 @@ CREATE TRIGGER on_profile_created_settings
     AFTER INSERT ON profiles
     FOR EACH ROW
     EXECUTE FUNCTION handle_new_profile_settings();
+
+DO $$
+DECLARE
+    v_profile RECORD;
+    v_org_id UUID;
+BEGIN
+    FOR v_profile IN
+        SELECT id, email, name
+        FROM profiles
+        WHERE org_id IS NULL
+    LOOP
+        INSERT INTO organizations (name, settings)
+        VALUES (
+            COALESCE(NULLIF(v_profile.name, ''), split_part(v_profile.email, '@', 1)) || ' Workspace',
+            '{"bootstrap": true}'::jsonb
+        )
+        RETURNING id INTO v_org_id;
+
+        UPDATE profiles
+        SET org_id = v_org_id
+        WHERE id = v_profile.id;
+    END LOOP;
+END $$;
+
+-- Repair profile-linked defaults after manual data deletion.
+-- This backfills personal organizations and user_settings rows for existing users.
+
+DROP POLICY IF EXISTS "Users can update own settings" ON user_settings;
+CREATE POLICY "Users can update own settings"
+    ON user_settings FOR UPDATE
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+DO $$
+DECLARE
+    v_profile RECORD;
+    v_org_id UUID;
+BEGIN
+    FOR v_profile IN
+        SELECT id, email, name
+        FROM profiles
+        WHERE org_id IS NULL
+    LOOP
+        INSERT INTO organizations (name, settings)
+        VALUES (
+            COALESCE(NULLIF(v_profile.name, ''), split_part(v_profile.email, '@', 1)) || ' Workspace',
+            '{"bootstrap": true}'::jsonb
+        )
+        RETURNING id INTO v_org_id;
+
+        UPDATE profiles
+        SET org_id = v_org_id
+        WHERE id = v_profile.id;
+    END LOOP;
+END $$;
+
+INSERT INTO user_settings (user_id)
+SELECT p.id
+FROM profiles p
+LEFT JOIN user_settings us ON us.user_id = p.id
+WHERE us.user_id IS NULL;
 
 -- Production hardening for session lifecycle, AI metadata, and storage policies
 
@@ -328,6 +470,7 @@ ALTER TABLE public.session_summaries
     ADD COLUMN IF NOT EXISTS external_records JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
 
+DROP POLICY IF EXISTS "Users can update own summaries" ON session_summaries;
 CREATE POLICY "Users can update own summaries"
     ON session_summaries FOR UPDATE
     USING (
@@ -335,6 +478,45 @@ CREATE POLICY "Users can update own summaries"
     )
     WITH CHECK (
         session_id IN (SELECT id FROM sessions WHERE user_id = auth.uid())
+    );
+
+DROP POLICY IF EXISTS "Users can view org activities" ON activities;
+DROP POLICY IF EXISTS "Users can update assigned activities" ON activities;
+DROP POLICY IF EXISTS "Users can view own activities" ON activities;
+DROP POLICY IF EXISTS "Users can update own activities" ON activities;
+DROP POLICY IF EXISTS "Users can create sessions" ON sessions;
+DROP POLICY IF EXISTS "Users can update own sessions" ON sessions;
+
+CREATE POLICY "Users can view own activities"
+    ON activities FOR SELECT
+    USING (assigned_to = auth.uid());
+
+CREATE POLICY "Users can update own activities"
+    ON activities FOR UPDATE
+    USING (assigned_to = auth.uid())
+    WITH CHECK (assigned_to = auth.uid());
+
+CREATE POLICY "Users can create sessions"
+    ON sessions FOR INSERT
+    WITH CHECK (
+        user_id = auth.uid()
+        AND activity_id IN (
+            SELECT id
+            FROM activities
+            WHERE assigned_to = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can update own sessions"
+    ON sessions FOR UPDATE
+    USING (user_id = auth.uid())
+    WITH CHECK (
+        user_id = auth.uid()
+        AND activity_id IN (
+            SELECT id
+            FROM activities
+            WHERE assigned_to = auth.uid()
+        )
     );
 
 -- Buckets

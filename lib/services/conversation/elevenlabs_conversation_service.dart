@@ -10,6 +10,7 @@ import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/network/api_client.dart';
 
 enum ConversationStatus { disconnected, connecting, connected, error }
@@ -58,6 +59,18 @@ class ElevenLabsConversationService {
   ElevenLabsConversationService({required ApiClient apiClient})
       : _apiClient = apiClient;
 
+  Future<http.Response> _requestSignedUrl({bool forceRefresh = false}) async {
+    final token = await _apiClient.getValidAccessToken(
+      forceRefresh: forceRefresh,
+    );
+    return http.get(
+      Uri.parse('${AppConfig.firebaseFunctionsUrl}/getSignedConversationUrl'),
+      headers: {
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+  }
+
   /// Start a real-time conversation with the ElevenLabs agent.
   Future<void> start({
     required String sessionId,
@@ -81,15 +94,10 @@ class ElevenLabsConversationService {
       _setupPlayerListener();
 
       // Get signed WebSocket URL via HTTP (onRequest function, not onCall)
-      final token = _apiClient.accessToken;
-      final signedUrlResponse = await http.get(
-        Uri.parse(
-          'https://us-central1-alchemy-4bc7c.cloudfunctions.net/getSignedConversationUrl',
-        ),
-        headers: {
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
+      var signedUrlResponse = await _requestSignedUrl();
+      if (signedUrlResponse.statusCode == 401) {
+        signedUrlResponse = await _requestSignedUrl(forceRefresh: true);
+      }
       if (signedUrlResponse.statusCode != 200) {
         throw Exception(
           'Failed to get signed URL: ${signedUrlResponse.statusCode} ${signedUrlResponse.body}',

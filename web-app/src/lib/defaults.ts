@@ -2,7 +2,7 @@ import type { UserSettings } from "@/lib/types";
 
 export function createDefaultSettings(userId: string): UserSettings {
   return {
-    id: userId,
+    id: "",
     user_id: userId,
     face_id_enabled: false,
     voice_output_enabled: true,

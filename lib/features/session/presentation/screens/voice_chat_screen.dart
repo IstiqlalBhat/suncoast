@@ -22,6 +22,7 @@ class VoiceChatScreen extends ConsumerStatefulWidget {
 
 class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
   bool _showReferencePanel = false;
+  bool _isEnding = false;
 
   @override
   void initState() {
@@ -86,7 +87,9 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
           ),
         ],
       ),
-      body: Container(
+      body: Stack(
+        children: [
+          Container(
         decoration: BoxDecoration(
           gradient: AppGradients.sessionGradient(AppColors.chat),
         ),
@@ -352,15 +355,42 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
           ),
         ),
       ),
+          if (_isEnding)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: AppColors.chat),
+                    SizedBox(height: AppDimensions.paddingM),
+                    Text(
+                      'Ending session...',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   Future<void> _endSession(BuildContext context) async {
+    if (_isEnding) return;
+    setState(() => _isEnding = true);
     final sessionId = await ref
         .read(activeSessionProvider.notifier)
         .endSession();
     if (sessionId != null && context.mounted) {
       context.go('/session/${widget.activityId}/summary?sessionId=$sessionId');
+    } else if (mounted) {
+      setState(() => _isEnding = false);
     }
   }
 }

@@ -14,10 +14,13 @@ class SummaryRemoteDatasource {
           .from(ApiEndpoints.sessionSummariesTable)
           .select()
           .eq('session_id', sessionId)
-          .maybeSingle();
+          .limit(1);
+      final rows = response as List<dynamic>;
 
-      if (response == null) return null;
-      return SessionSummaryModel.fromJson(response);
+      if (rows.isEmpty) return null;
+      return SessionSummaryModel.fromJson(
+        Map<String, dynamic>.from(rows.first as Map),
+      );
     } catch (e) {
       throw ServerException('Failed to fetch summary: $e');
     }

@@ -2,6 +2,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
+import { getSessionOwnerId } from "../utils/auth";
 
 const supabaseUrl = defineSecret("SUPABASE_URL");
 const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
@@ -39,6 +40,12 @@ export const agentCreateObservation = onRequest(
       }
 
       const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
+      const session = await getSessionOwnerId(supabase, sessionId);
+
+      if (session.status !== "active" && session.status !== "processing") {
+        res.status(400).json({ error: "Session is not active" });
+        return;
+      }
 
       const { data, error } = await supabase.from("ai_events").insert({
         session_id: sessionId,
@@ -59,7 +66,7 @@ export const agentCreateObservation = onRequest(
         return;
       }
 
-      logger.info("Observation created", { id: data.id, sessionId });
+      logger.info("Observation created", { id: data.id, sessionId, userId: session.user_id });
 
       res.json({
         success: true,

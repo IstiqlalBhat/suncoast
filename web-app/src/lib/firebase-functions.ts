@@ -13,12 +13,24 @@ export async function callFunction<T>(
   functionName: string,
   data?: Record<string, unknown>,
 ) {
+  const supabase = getSupabaseBrowserClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
   const response = await fetch(`${env.firebaseFunctionsUrl}/${functionName}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ data: data ?? {} }),
+    body: JSON.stringify({
+      data: {
+        ...(data ?? {}),
+        ...(session?.access_token
+          ? { accessToken: session.access_token }
+          : {}),
+      },
+    }),
   });
 
   const payload = await response.json().catch(() => null);

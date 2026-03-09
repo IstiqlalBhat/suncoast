@@ -29,41 +29,85 @@ class ApiClient {
   String? get currentUserId => _supabase.auth.currentUser?.id;
   String? get accessToken => _supabase.auth.currentSession?.accessToken;
 
+  Future<String?> getValidAccessToken({bool forceRefresh = false}) async {
+    final session = _supabase.auth.currentSession;
+    if (session == null) {
+      return null;
+    }
+
+    if (!forceRefresh && !session.isExpired) {
+      return session.accessToken;
+    }
+
+    try {
+      final refreshed = await _supabase.auth.refreshSession();
+      return refreshed.session?.accessToken ??
+          _supabase.auth.currentSession?.accessToken;
+    } catch (_) {
+      return _supabase.auth.currentSession?.accessToken;
+    }
+  }
+
   /// Call a Firebase v2 callable function via the Firebase SDK
   Future<Map<String, dynamic>> callFunction(
     String functionName, {
     Map<String, dynamic>? data,
+  }) async {
+    return _callFunctionWithAuth(
+      functionName,
+      data: data,
+      forceRefresh: false,
+    );
+  }
+
+  Future<Map<String, dynamic>> _callFunctionWithAuth(
+    String functionName, {
+    Map<String, dynamic>? data,
+    required bool forceRefresh,
   }) async {
     // Strip leading slash if present
     final name = functionName.startsWith('/')
         ? functionName.substring(1)
         : functionName;
 
+    final token = await getValidAccessToken(forceRefresh: forceRefresh);
+
+    final payload = {
+      ...?data,
+      ...?token != null ? {'accessToken': token} : null,
+    };
+
     final callable = _functions.httpsCallable(
       name,
       options: HttpsCallableOptions(timeout: const Duration(seconds: 120)),
     );
 
-    final result = await callable.call(data);
-    return Map<String, dynamic>.from(result.data as Map);
+    try {
+      final result = await callable.call(payload);
+      return Map<String, dynamic>.from(result.data as Map);
+    } on FirebaseFunctionsException catch (error) {
+      if (!forceRefresh && error.code == 'unauthenticated') {
+        return _callFunctionWithAuth(
+          functionName,
+          data: data,
+          forceRefresh: true,
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Transcribe audio via the Whisper proxy (onRequest function).
   /// Returns {"transcript": "..."}.
   Future<Map<String, dynamic>> transcribeAudio(List<int> audioBytes) async {
-    final token = accessToken;
     final pcm = Uint8List.fromList(audioBytes);
     final wav = _wrapPcmAsWav(pcm);
 
     final url = Uri.parse(AppConfig.whisperProxyUrl);
-
-    final response = await http.post(
+    final response = await _postAuthorizedBytes(
       url,
-      headers: {
-        'Content-Type': 'audio/wav',
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
       body: wav,
+      contentType: 'audio/wav',
     );
 
     if (response.statusCode != 200) {
@@ -75,6 +119,34 @@ class ApiClient {
     return Map<String, dynamic>.from(
       jsonDecode(response.body) as Map,
     );
+  }
+
+  Future<http.Response> _postAuthorizedBytes(
+    Uri url, {
+    required Uint8List body,
+    required String contentType,
+    bool forceRefresh = false,
+  }) async {
+    final token = await getValidAccessToken(forceRefresh: forceRefresh);
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': contentType,
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+      body: body,
+    );
+
+    if (response.statusCode == 401 && !forceRefresh) {
+      return _postAuthorizedBytes(
+        url,
+        body: body,
+        contentType: contentType,
+        forceRefresh: true,
+      );
+    }
+
+    return response;
   }
 
   /// Wrap raw PCM16 mono 16kHz data in a WAV container.

@@ -2,6 +2,7 @@ import { onRequest } from "firebase-functions/v2/https";
 import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
+import { getSessionOwnerId } from "../utils/auth";
 
 const supabaseUrl = defineSecret("SUPABASE_URL");
 const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
@@ -39,6 +40,7 @@ export const agentLookupInfo = onRequest(
 
       const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
       const lookupType = lookup_type || type || "general";
+      const session = await getSessionOwnerId(supabase, sessionId);
 
       // Look up recent events from this session for context
       const { data: sessionEvents } = await supabase
@@ -48,10 +50,29 @@ export const agentLookupInfo = onRequest(
         .order("created_at", { ascending: false })
         .limit(20);
 
-      // Look up past sessions for historical context
+      const { data: ownedSessions, error: ownedSessionsError } = await supabase
+        .from("sessions")
+        .select("id")
+        .eq("user_id", session.user_id)
+        .limit(100);
+
+      if (ownedSessionsError) {
+        logger.error("Failed to fetch owned sessions for lookup", {
+          error: ownedSessionsError.message,
+          sessionId,
+          userId: session.user_id,
+        });
+        res.status(500).json({ error: "Failed to look up history" });
+        return;
+      }
+
+      const ownedSessionIds = (ownedSessions || []).map((item) => item.id);
+
+      // Look up past sessions for historical context, restricted to the same owner
       const { data: pastEvents } = await supabase
         .from("ai_events")
         .select("type, content, status, metadata, created_at")
+        .in("session_id", ownedSessionIds.length > 0 ? ownedSessionIds : ["00000000-0000-0000-0000-000000000000"])
         .ilike("content", `%${query}%`)
         .order("created_at", { ascending: false })
         .limit(10);
@@ -70,6 +91,7 @@ export const agentLookupInfo = onRequest(
         query,
         type: lookupType,
         sessionId,
+        userId: session.user_id,
         currentEvents: results.current_session.length,
         historyEvents: results.related_history.length,
       });

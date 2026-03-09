@@ -23,6 +23,7 @@ class MediaCaptureScreen extends ConsumerStatefulWidget {
 
 class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
   String _selectedCapture = 'photo';
+  bool _isEnding = false;
 
   @override
   void initState() {
@@ -62,7 +63,9 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
         accentColor: AppColors.media,
         onEndSession: () => _endSession(context),
       ),
-      body: Container(
+      body: Stack(
+        children: [
+          Container(
         decoration: BoxDecoration(
           gradient: AppGradients.sessionGradient(AppColors.media),
         ),
@@ -360,6 +363,29 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
           ),
         ),
       ),
+          if (_isEnding)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: AppColors.media),
+                    SizedBox(height: AppDimensions.paddingM),
+                    Text(
+                      'Ending session...',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -370,11 +396,15 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
   }
 
   Future<void> _endSession(BuildContext context) async {
+    if (_isEnding) return;
+    setState(() => _isEnding = true);
     final sessionId = await ref
         .read(activeSessionProvider.notifier)
         .endSession();
     if (sessionId != null && context.mounted) {
       context.go('/session/${widget.activityId}/summary?sessionId=$sessionId');
+    } else if (mounted) {
+      setState(() => _isEnding = false);
     }
   }
 }

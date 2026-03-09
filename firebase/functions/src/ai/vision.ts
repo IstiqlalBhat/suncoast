@@ -4,6 +4,11 @@ import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { logFunctionError } from "../utils/logging";
+import {
+  assertAttachmentOwnership,
+  assertSessionOwnership,
+  authenticateCallableRequest,
+} from "../utils/auth";
 
 const geminiKey = defineSecret("GEMINI_API_KEY");
 const supabaseUrl = defineSecret("SUPABASE_URL");
@@ -14,10 +19,26 @@ export const analyzeImage = onCall(
   async (request) => {
     const genAI = new GoogleGenerativeAI(geminiKey.value());
     const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
-    const { image, context, sessionId, attachmentId, mimeType } = request.data;
+    const { user, payload } = await authenticateCallableRequest(request, supabase);
+    const image = typeof payload.image === "string" ? payload.image : "";
+    const context = typeof payload.context === "string" ? payload.context : undefined;
+    const sessionId =
+      typeof payload.sessionId === "string" ? payload.sessionId : undefined;
+    const attachmentId =
+      typeof payload.attachmentId === "string" ? payload.attachmentId : undefined;
+    const mimeType =
+      typeof payload.mimeType === "string" ? payload.mimeType : undefined;
 
     if (!image) {
       throw new HttpsError("invalid-argument", "Image is required");
+    }
+
+    if (sessionId) {
+      await assertSessionOwnership(supabase, sessionId, user.id);
+    }
+
+    if (attachmentId) {
+      await assertAttachmentOwnership(supabase, attachmentId, user.id);
     }
 
     logger.info("analyzeImage request received", {
@@ -103,6 +124,7 @@ Provide your analysis as JSON:
       }
       logFunctionError("analyzeImage", error, {
         hasSessionId: Boolean(sessionId),
+        userId: user.id,
       });
       throw new HttpsError("internal", "Image analysis failed");
     }

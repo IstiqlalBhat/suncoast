@@ -25,9 +25,20 @@ class SettingsRemoteDatasource {
 
   Future<UserSettingsModel> upsertSettings(UserSettingsModel settings) async {
     try {
+      final payload = {
+        'user_id': settings.userId,
+        'face_id_enabled': settings.faceIdEnabled,
+        'voice_output_enabled': settings.voiceOutputEnabled,
+        'voice_id': settings.voiceId,
+        'voice_speed': settings.voiceSpeed,
+        'confirmation_mode': settings.confirmationMode.name,
+        'language': settings.language,
+        'use_premium_tts': settings.usePremiumTts,
+      };
+
       final response = await _supabase
           .from(ApiEndpoints.userSettingsTable)
-          .upsert(settings.toJson())
+          .upsert(payload, onConflict: 'user_id')
           .select()
           .single();
 

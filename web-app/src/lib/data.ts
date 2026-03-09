@@ -144,9 +144,20 @@ export async function upsertSettings(
   supabase: SupabaseClient,
   settings: UserSettings,
 ) {
+  const payload = {
+    user_id: settings.user_id,
+    face_id_enabled: settings.face_id_enabled,
+    voice_output_enabled: settings.voice_output_enabled,
+    voice_id: settings.voice_id,
+    voice_speed: settings.voice_speed,
+    confirmation_mode: settings.confirmation_mode,
+    language: settings.language,
+    use_premium_tts: settings.use_premium_tts,
+  };
+
   const { data, error } = await supabase
     .from("user_settings")
-    .upsert(settings)
+    .upsert(payload, { onConflict: "user_id" })
     .select("*")
     .single();
 

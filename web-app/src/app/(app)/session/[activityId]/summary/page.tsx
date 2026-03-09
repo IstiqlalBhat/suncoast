@@ -19,10 +19,15 @@ export default async function SummaryPage({
   }
 
   const { supabase } = await requireUser();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
   const activity = await getActivity(supabase, activityId);
   const summary =
     (await getSessionSummary(supabase, sessionId)) ??
-    (await generateSummaryServer(sessionId));
+    (session?.access_token
+      ? await generateSummaryServer(sessionId, session.access_token)
+      : null);
 
   return (
     <SummaryClient

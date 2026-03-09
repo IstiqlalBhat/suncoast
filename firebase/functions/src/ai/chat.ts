@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { logFunctionError } from "../utils/logging";
+import { assertSessionOwnership, authenticateCallableRequest } from "../utils/auth";
 
 const geminiKey = defineSecret("GEMINI_API_KEY");
 const supabaseUrl = defineSecret("SUPABASE_URL");
@@ -35,10 +36,19 @@ export const chat = onCall(
   async (request) => {
     const genAI = new GoogleGenerativeAI(geminiKey.value());
     const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
-    const { message, sessionContext, sessionId } = request.data;
+    const { user, payload } = await authenticateCallableRequest(request, supabase);
+    const message = typeof payload.message === "string" ? payload.message : "";
+    const sessionContext =
+      typeof payload.sessionContext === "string" ? payload.sessionContext : undefined;
+    const sessionId =
+      typeof payload.sessionId === "string" ? payload.sessionId : undefined;
 
     if (!message) {
       throw new HttpsError("invalid-argument", "Message is required");
+    }
+
+    if (sessionId) {
+      await assertSessionOwnership(supabase, sessionId, user.id);
     }
 
     logger.info("chat request received", {
@@ -125,6 +135,7 @@ Return valid JSON only.`;
     } catch (error) {
       logFunctionError("chat", error, {
         hasSessionId: Boolean(sessionId),
+        userId: user.id,
       });
       throw new HttpsError("internal", "Chat processing failed");
     }

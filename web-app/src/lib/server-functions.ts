@@ -3,6 +3,7 @@ import type { SessionSummary } from "@/lib/types";
 
 export async function generateSummaryServer(
   sessionId: string,
+  accessToken: string,
 ): Promise<SessionSummary | null> {
   const response = await fetch(`${env.firebaseFunctionsUrl}/generateSummary`, {
     method: "POST",
@@ -10,7 +11,7 @@ export async function generateSummaryServer(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      data: { sessionId },
+      data: { sessionId, accessToken },
     }),
     cache: "no-store",
   });

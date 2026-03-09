@@ -30,7 +30,8 @@ CREATE POLICY "Users can insert own settings"
 
 CREATE POLICY "Users can update own settings"
     ON user_settings FOR UPDATE
-    USING (user_id = auth.uid());
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
 
 -- Function to auto-create settings on profile creation
 CREATE OR REPLACE FUNCTION handle_new_profile_settings()

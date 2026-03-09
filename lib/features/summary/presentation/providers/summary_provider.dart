@@ -15,6 +15,7 @@ final summaryRemoteDatasourceProvider = Provider<SummaryRemoteDatasource>((
 final summaryRepositoryProvider = Provider<SummaryRepository>((ref) {
   return SummaryRepository(
     remoteDatasource: ref.watch(summaryRemoteDatasourceProvider),
+    apiClient: ref.watch(apiClientProvider),
   );
 });
 
