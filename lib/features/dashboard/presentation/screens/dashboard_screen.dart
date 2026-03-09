@@ -6,6 +6,7 @@ import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/models/activity_model.dart';
 import '../../../../shared/providers/auth_providers.dart';
+import '../../../session/presentation/providers/session_provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../widgets/activity_card.dart';
 
@@ -37,6 +38,150 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           context.push('/session/${activity.id}/$route');
         },
       ),
+    );
+  }
+
+  Future<void> _openActivity(ActivityModel activity) async {
+    final userId = ref.read(currentUserProvider)?.id;
+    if (userId == null || userId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in again.')),
+      );
+      return;
+    }
+
+    final latestActivityResult = await ref
+        .read(activityRepositoryProvider)
+        .getActivity(activity.id);
+
+    if (!latestActivityResult.isSuccess) {
+      final message = latestActivityResult.when(
+        success: (_) => 'Failed to open activity.',
+        failure: (errorMessage, _) => errorMessage,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      return;
+    }
+
+    final latestActivity = latestActivityResult.dataOrNull ?? activity;
+    final latestSessionResult = await ref
+        .read(sessionRepositoryProvider)
+        .getLatestCompletedSessionForActivity(
+          activityId: latestActivity.id,
+          userId: userId,
+        );
+
+    if (!mounted) return;
+
+    final latestCompletedSession = latestSessionResult.dataOrNull;
+    if (latestCompletedSession != null) {
+      context.push(
+        '/session/${latestActivity.id}/summary?sessionId=${latestCompletedSession.id}',
+      );
+      return;
+    }
+
+    if (!latestSessionResult.isSuccess) {
+      final message = latestSessionResult.when(
+        success: (_) => 'Failed to open activity.',
+        failure: (errorMessage, _) => errorMessage,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      return;
+    }
+
+    if (latestActivity.status == ActivityStatus.completed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No completed session summary found.')),
+      );
+      return;
+    }
+
+    final route = latestActivity.type.routeSegment;
+    if (!mounted) return;
+    context.push('/session/${latestActivity.id}/$route');
+  }
+
+  Future<void> _confirmDeleteActivity(ActivityModel activity) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete activity'),
+        content: Text(
+          'Delete "${activity.title}" and all sessions linked to it? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final message = await ref
+        .read(activitiesProvider.notifier)
+        .deleteActivity(activity.id);
+    if (!mounted || message == null) return;
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _markActivityCompleted(ActivityModel activity) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Mark activity completed'),
+        content: Text(
+          'Mark "${activity.title}" as completed? If a finished session exists, tapping this activity will open its summary.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Mark completed'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final message = await ref
+        .read(activitiesProvider.notifier)
+        .updateActivityStatus(activity.id, ActivityStatus.completed);
+
+    if (!mounted) return;
+
+    if (message != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Activity marked completed.')),
     );
   }
 
@@ -282,10 +427,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         final activity = activities[index];
                         return ActivityCard(
                           activity: activity,
-                          onTap: () {
-                            final route = activity.type.routeSegment;
-                            context.push('/session/${activity.id}/$route');
-                          },
+                          onTap: () => _openActivity(activity),
+                          onMarkCompleted: () => _markActivityCompleted(activity),
+                          onDelete: () => _confirmDeleteActivity(activity),
                         );
                       },
                     ),

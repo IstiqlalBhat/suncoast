@@ -6,6 +6,7 @@ export { processTranscript } from "./ai/process-session";
 export { chat } from "./ai/chat";
 export { analyzeImage } from "./ai/vision";
 export { generateSummary } from "./ai/summary";
+export { syncActivityStatus } from "./activities/sync-status";
 export { whisperProxy } from "./transcription/whisper-proxy";
 export { openaiTts } from "./integrations/openai-tts";
 

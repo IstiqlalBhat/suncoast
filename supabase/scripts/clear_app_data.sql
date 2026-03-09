@@ -15,10 +15,13 @@ DELETE FROM public.media_attachments;
 DELETE FROM public.sessions;
 DELETE FROM public.activities;
 DELETE FROM public.user_settings;
-DELETE FROM public.organizations;
 
 UPDATE public.profiles
-SET avatar_url = NULL;
+SET
+    avatar_url = NULL,
+    org_id = NULL;
+
+DELETE FROM public.organizations;
 
 DO $$
 DECLARE

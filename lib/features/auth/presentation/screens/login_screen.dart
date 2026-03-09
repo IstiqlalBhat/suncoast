@@ -29,7 +29,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadBiometricPreference();
+      _loadBiometricState();
       _maybeAutoSignInWithBiometrics();
     });
   }
@@ -170,7 +170,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             },
                       title: const Text(AppStrings.enableFaceId),
                       subtitle: const Text(
-                        'Use Face ID automatically next time on this device',
+                        'Same device preference as the Face ID setting in Settings',
                       ),
                       activeColor: AppColors.primary,
                       checkColor: AppColors.background,
@@ -232,12 +232,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _loadBiometricPreference() async {
+  Future<void> _loadBiometricState() async {
     if (!mounted) return;
 
-    final isEnabled = await ref
-        .read(secureStorageServiceProvider)
-        .isBiometricEnabled();
+    final secureStorage = ref.read(secureStorageServiceProvider);
+    final isEnabled = await secureStorage.isBiometricEnabled();
 
     if (!mounted) return;
     setState(() {
@@ -248,6 +247,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _maybeAutoSignInWithBiometrics() async {
     if (!mounted || _autoBiometricAttempted || _isSignUp) return;
     _autoBiometricAttempted = true;
+
+    final suppressed = await ref
+        .read(secureStorageServiceProvider)
+        .consumeBiometricPromptSuppression();
+    if (suppressed) return;
 
     final hasSession = ref.read(authRepositoryProvider).currentSession != null;
     if (hasSession) return;

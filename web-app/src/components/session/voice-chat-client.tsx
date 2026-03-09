@@ -8,8 +8,12 @@ import { BrowserPcmRecorder } from "@/lib/audio/browser-recorder";
 import { uint8ArrayToBase64, mergeUint8Arrays } from "@/lib/audio/pcm";
 import { wrapPcmAsWav } from "@/lib/audio/wav";
 import { supportsLiveVoiceChat } from "@/lib/browser-capabilities";
-import { callAuthorizedFunction } from "@/lib/firebase-functions";
-import { createSession, endSession, updateSession } from "@/lib/data";
+import { callAuthorizedFunction, callFunction } from "@/lib/firebase-functions";
+import {
+  createSession,
+  endSession,
+  updateSession,
+} from "@/lib/data";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { Activity } from "@/lib/types";
 
@@ -58,6 +62,10 @@ export function VoiceChatClient({ activity }: VoiceChatClientProps) {
     const session = await createSession(supabase, {
       activityId: activity.id,
       mode: "chat",
+    });
+    await callFunction("syncActivityStatus", {
+      sessionId: session.id,
+      status: "in_progress",
     });
     setSessionId(session.id);
     sessionIdRef.current = session.id;
@@ -259,6 +267,10 @@ export function VoiceChatClient({ activity }: VoiceChatClientProps) {
       socketRef.current?.close();
       await recorderRef.current?.stop();
       await endSession(supabase, sessionId);
+      await callFunction("syncActivityStatus", {
+        sessionId,
+        status: "completed",
+      });
       router.push(`/session/${activity.id}/summary?sessionId=${sessionId}`);
       router.refresh();
     } catch (finishError) {

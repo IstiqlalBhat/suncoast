@@ -7,7 +7,14 @@ import { EmptyState } from "@/components/empty-state";
 import { MetricCard } from "@/components/metric-card";
 import { PageHeading } from "@/components/page-heading";
 import { StatusBadge } from "@/components/status-badge";
-import { createActivity, getActivities } from "@/lib/data";
+import {
+  createActivity,
+  deleteActivity,
+  getActivity,
+  getActivities,
+  getLatestCompletedSessionForActivity,
+  updateActivityStatus,
+} from "@/lib/data";
 import { formatDate } from "@/lib/date";
 import { routeForActivityType } from "@/lib/routes";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -41,6 +48,7 @@ export function DashboardClient({
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
   const [newType, setNewType] = useState<ActivityType>("passive");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -115,6 +123,108 @@ export function DashboardClient({
     }
   }
 
+  async function handleOpenActivity(activity: Activity) {
+    let latestActivity = activity;
+
+    try {
+      latestActivity = await getActivity(supabase, activity.id);
+    } catch (openError) {
+      setError(
+        openError instanceof Error
+          ? openError.message
+          : "Failed to refresh activity state.",
+      );
+      return;
+    }
+
+    try {
+      const session = await getLatestCompletedSessionForActivity(
+        supabase,
+        latestActivity.id,
+      );
+
+      if (session) {
+        router.push(`/session/${latestActivity.id}/summary?sessionId=${session.id}`);
+        return;
+      }
+    } catch (openError) {
+      setError(
+        openError instanceof Error
+          ? openError.message
+          : "Failed to open activity summary.",
+      );
+      return;
+    }
+
+    if (latestActivity.status === "completed") {
+      setError("No completed session summary found for this activity.");
+      return;
+    }
+
+    router.push(
+      `/session/${latestActivity.id}/${routeForActivityType(latestActivity.type)}`,
+    );
+  }
+
+  async function handleDeleteActivity(activityId: string) {
+    const confirmed = window.confirm(
+      "Delete this activity and all sessions linked to it? This cannot be undone.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+    setDeletingId(activityId);
+
+    try {
+      await deleteActivity(supabase, activityId);
+      setActivities((previous) =>
+        previous.filter((activity) => activity.id !== activityId),
+      );
+      router.refresh();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Failed to delete activity.",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleMarkCompleted(activityId: string) {
+    const confirmed = window.confirm(
+      "Mark this activity as completed? If a finished session exists, opening the activity will go to its summary.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      const updated = await updateActivityStatus(
+        supabase,
+        activityId,
+        "completed",
+      );
+      setActivities((previous) =>
+        previous.map((activity) =>
+          activity.id === activityId ? updated : activity,
+        ),
+      );
+      router.refresh();
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Failed to mark activity completed.",
+      );
+    }
+  }
+
   return (
     <div className="space-y-8">
       <PageHeading
@@ -179,13 +289,16 @@ export function DashboardClient({
               />
             ) : (
               activities.map((activity) => (
-                <Link
+                <article
                   key={activity.id}
-                  href={`/session/${activity.id}/${routeForActivityType(activity.type)}`}
                   className="block rounded-[24px] border border-white/10 bg-slate-950/35 p-5 transition hover:border-amber-200/30 hover:bg-white/8"
                 >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
+                  <div className="flex items-start justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenActivity(activity)}
+                      className="min-w-0 flex-1 text-left"
+                    >
                       <div className="flex flex-wrap gap-2">
                         <StatusBadge
                           label={activity.type === "twoway" ? "chat" : activity.type}
@@ -199,13 +312,32 @@ export function DashboardClient({
                       <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-300">
                         {activity.description || "No description provided yet."}
                       </p>
-                    </div>
-                    <div className="text-sm text-stone-400">
-                      <p>{activity.location || "No location"}</p>
-                      <p className="mt-1">{formatDate(activity.scheduled_at)}</p>
+                    </button>
+                    <div className="flex flex-col items-end gap-3 text-sm text-stone-400">
+                      <div className="text-right">
+                        <p>{activity.location || "No location"}</p>
+                        <p className="mt-1">{formatDate(activity.scheduled_at)}</p>
+                      </div>
+                      {activity.status !== "completed" ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleMarkCompleted(activity.id)}
+                          className="rounded-full border border-emerald-400/30 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100 transition hover:bg-emerald-400/10"
+                        >
+                          Complete
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteActivity(activity.id)}
+                        disabled={deletingId === activity.id}
+                        className="rounded-full border border-rose-400/30 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-200 transition hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingId === activity.id ? "Deleting" : "Delete"}
+                      </button>
                     </div>
                   </div>
-                </Link>
+                </article>
               ))
             )}
           </div>

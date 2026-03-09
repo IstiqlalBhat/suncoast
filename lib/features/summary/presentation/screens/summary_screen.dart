@@ -8,6 +8,8 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../features/session/presentation/providers/session_provider.dart';
 import '../../../../shared/models/session_summary_model.dart';
 import '../../../../shared/widgets/gradient_button.dart';
+import '../../../dashboard/presentation/providers/dashboard_provider.dart';
+import '../../../history/presentation/providers/history_provider.dart';
 import '../providers/summary_provider.dart';
 
 class SummaryScreen extends ConsumerStatefulWidget {
@@ -26,6 +28,13 @@ class SummaryScreen extends ConsumerStatefulWidget {
 
 class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   bool _isConfirming = false;
+
+  void _goBackToDashboard() {
+    ref.invalidate(activitiesProvider);
+    ref.invalidate(sessionHistoryProvider);
+    ref.read(activeSessionProvider.notifier).reset();
+    context.go('/dashboard');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +225,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
               ),
               const SizedBox(height: AppDimensions.paddingM),
               ElevatedButton(
-                onPressed: () => context.go('/dashboard'),
+                onPressed: _goBackToDashboard,
                 child: const Text('Back to Dashboard'),
               ),
             ],
@@ -556,8 +565,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
 
     result.when(
       success: (_) {
-        ref.read(activeSessionProvider.notifier).reset();
-        context.go('/dashboard');
+        _goBackToDashboard();
       },
       failure: (message, _) {
         ScaffoldMessenger.of(

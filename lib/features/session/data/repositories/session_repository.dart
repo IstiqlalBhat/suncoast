@@ -66,6 +66,23 @@ class SessionRepository {
     }
   }
 
+  Future<Result<SessionModel?>> getLatestCompletedSessionForActivity({
+    required String activityId,
+    required String userId,
+  }) async {
+    try {
+      final session = await _remoteDatasource.getLatestCompletedSessionForActivity(
+        activityId,
+        userId,
+      );
+      return Result.success(session);
+    } catch (e) {
+      return Result.failure(
+        'Failed to load latest completed session: $e',
+      );
+    }
+  }
+
   Future<Result<void>> updateTranscript(
     String sessionId,
     String transcript,

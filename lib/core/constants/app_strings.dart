@@ -7,7 +7,6 @@ abstract final class AppStrings {
   static const email = 'Email';
   static const password = 'Password';
   static const forgotPassword = 'Forgot Password?';
-  static const faceIdLogin = 'Sign in with Face ID';
   static const enableFaceId = 'Enable Face ID';
   static const loginSuccess = 'Welcome back!';
   static const loginError = 'Invalid credentials';

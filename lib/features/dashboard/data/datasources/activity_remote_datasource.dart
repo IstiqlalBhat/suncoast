@@ -89,4 +89,30 @@ class ActivityRemoteDatasource {
       throw ServerException('Failed to create activity: $e');
     }
   }
+
+  Future<void> deleteActivity(String id) async {
+    try {
+      await _supabase.from(ApiEndpoints.activitiesTable).delete().eq('id', id);
+    } catch (e) {
+      throw ServerException('Failed to delete activity: $e');
+    }
+  }
+
+  Future<ActivityModel> updateActivityStatus(String id, String status) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.activitiesTable)
+          .update({
+            'status': status,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', id)
+          .select()
+          .single();
+
+      return ActivityModel.fromJson(response);
+    } catch (e) {
+      throw ServerException('Failed to update activity status: $e');
+    }
+  }
 }

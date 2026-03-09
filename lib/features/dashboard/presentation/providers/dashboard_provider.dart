@@ -58,6 +58,47 @@ class ActivitiesNotifier extends AsyncNotifier<List<ActivityModel>> {
       () => _fetchActivities(typeFilter: type),
     );
   }
+
+  Future<String?> deleteActivity(String activityId) async {
+    final previous = state.valueOrNull ?? const <ActivityModel>[];
+    final next = previous.where((activity) => activity.id != activityId).toList();
+    state = AsyncValue.data(next);
+
+    final repo = ref.read(activityRepositoryProvider);
+    final result = await repo.deleteActivity(activityId);
+    return result.when(
+      success: (_) => null,
+      failure: (message, _) {
+        state = AsyncValue.data(previous);
+        return message;
+      },
+    );
+  }
+
+  Future<String?> updateActivityStatus(
+    String activityId,
+    ActivityStatus status,
+  ) async {
+    final previous = state.valueOrNull ?? const <ActivityModel>[];
+    final next = previous
+        .map(
+          (activity) => activity.id == activityId
+              ? activity.copyWith(status: status)
+              : activity,
+        )
+        .toList();
+    state = AsyncValue.data(next);
+
+    final repo = ref.read(activityRepositoryProvider);
+    final result = await repo.updateActivityStatus(activityId, status);
+    return result.when(
+      success: (_) => null,
+      failure: (message, _) {
+        state = AsyncValue.data(previous);
+        return message;
+      },
+    );
+  }
 }
 
 final searchQueryProvider = StateProvider<String>((ref) => '');

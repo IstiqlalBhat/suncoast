@@ -10,6 +10,7 @@ class SecureStorageService {
   static const _emailKey = 'user_email';
   static const _passwordKey = 'user_password';
   static const _biometricEnabledKey = 'biometric_enabled';
+  static const _skipBiometricPromptOnceKey = 'skip_biometric_prompt_once';
 
   Future<void> saveTokens({
     required String accessToken,
@@ -58,12 +59,40 @@ class SecureStorageService {
     return value == 'true';
   }
 
+  Future<void> clearSessionTokens() async {
+    await Future.wait([
+      _storage.delete(key: _accessTokenKey),
+      _storage.delete(key: _refreshTokenKey),
+    ]);
+  }
+
+  Future<void> suppressNextBiometricPrompt() async {
+    await _storage.write(key: _skipBiometricPromptOnceKey, value: 'true');
+  }
+
+  Future<bool> consumeBiometricPromptSuppression() async {
+    final value = await _storage.read(key: _skipBiometricPromptOnceKey);
+    if (value != 'true') {
+      return false;
+    }
+
+    await _storage.delete(key: _skipBiometricPromptOnceKey);
+    return true;
+  }
+
   Future<void> clearSavedPassword() => _storage.delete(key: _passwordKey);
+
+  Future<void> clearBiometricPreference() async {
+    await Future.wait([
+      _storage.delete(key: _biometricEnabledKey),
+      _storage.delete(key: _skipBiometricPromptOnceKey),
+    ]);
+  }
 
   Future<void> clearBiometricLoginData() async {
     await Future.wait([
       clearSavedPassword(),
-      _storage.delete(key: _biometricEnabledKey),
+      clearBiometricPreference(),
     ]);
   }
 

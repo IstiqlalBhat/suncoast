@@ -8,7 +8,11 @@ import { BrowserPcmRecorder } from "@/lib/audio/browser-recorder";
 import { wrapPcmAsWav } from "@/lib/audio/wav";
 import { supportsBrowserRecording } from "@/lib/browser-capabilities";
 import { callAuthorizedFunction, callFunction } from "@/lib/firebase-functions";
-import { createSession, endSession, updateSession } from "@/lib/data";
+import {
+  createSession,
+  endSession,
+  updateSession,
+} from "@/lib/data";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import type { Activity } from "@/lib/types";
 
@@ -49,6 +53,10 @@ export function PassiveSessionClient({ activity }: PassiveSessionClientProps) {
     const session = await createSession(supabase, {
       activityId: activity.id,
       mode: "passive",
+    });
+    await callFunction("syncActivityStatus", {
+      sessionId: session.id,
+      status: "in_progress",
     });
     setSessionId(session.id);
     return session.id;
@@ -149,6 +157,10 @@ export function PassiveSessionClient({ activity }: PassiveSessionClientProps) {
       await flushPendingAudio(true);
       await recorderRef.current?.stop();
       await endSession(supabase, sessionId);
+      await callFunction("syncActivityStatus", {
+        sessionId,
+        status: "completed",
+      });
       router.push(`/session/${activity.id}/summary?sessionId=${sessionId}`);
       router.refresh();
     } catch (finishError) {

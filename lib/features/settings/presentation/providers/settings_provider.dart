@@ -24,7 +24,12 @@ final settingsProvider =
 class SettingsNotifier extends AsyncNotifier<UserSettingsModel> {
   @override
   Future<UserSettingsModel> build() async {
-    final userId = ref.read(currentUserProvider)?.id ?? '';
+    final user = ref.watch(currentUserProvider);
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+
+    final userId = user.id;
     final repo = ref.read(settingsRepositoryProvider);
     final secureStorage = ref.read(secureStorageServiceProvider);
     final faceIdEnabled = await secureStorage.isBiometricEnabled();
@@ -57,14 +62,12 @@ class SettingsNotifier extends AsyncNotifier<UserSettingsModel> {
       return saveError;
     }
 
-    await secureStorage.setBiometricEnabled(false);
+    await loginNotifier.disableBiometricLogin();
     final saveError = await _save(current.copyWith(faceIdEnabled: false));
     if (saveError != null) {
       await secureStorage.setBiometricEnabled(true);
       return saveError;
     }
-
-    await secureStorage.clearSavedPassword();
     return null;
   }
 

@@ -71,8 +71,14 @@ class AuthRepository {
 
   Future<Result<void>> signOut() async {
     try {
+      final biometricEnabled = await _secureStorage.isBiometricEnabled();
       await _remoteDatasource.signOut();
-      await _secureStorage.clearAll();
+      if (biometricEnabled) {
+        await _secureStorage.clearSessionTokens();
+        await _secureStorage.suppressNextBiometricPrompt();
+      } else {
+        await _secureStorage.clearAll();
+      }
       return const Result.success(null);
     } catch (e) {
       return Result.failure('Sign out failed: $e');

@@ -7,11 +7,15 @@ import '../../../../shared/models/activity_model.dart';
 class ActivityCard extends StatelessWidget {
   final ActivityModel activity;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final VoidCallback? onMarkCompleted;
 
   const ActivityCard({
     super.key,
     required this.activity,
     required this.onTap,
+    this.onDelete,
+    this.onMarkCompleted,
   });
 
   Color get _typeColor => switch (activity.type) {
@@ -150,6 +154,46 @@ class ActivityCard extends StatelessWidget {
                           ],
                         ],
                       ),
+                      if (activity.status != ActivityStatus.completed &&
+                          onMarkCompleted != null) ...[
+                        const SizedBox(height: 8),
+                        InkWell(
+                          onTap: onMarkCompleted,
+                          borderRadius: BorderRadius.circular(999),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: AppColors.success.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.check_circle_outline,
+                                  size: 12,
+                                  color: AppColors.success,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Mark completed',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.success,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -169,18 +213,76 @@ class ActivityCard extends StatelessWidget {
                         ),
                       ),
                     const SizedBox(height: 6),
-                    Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: _typeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Icon(
-                        Icons.chevron_right,
-                        color: _typeColor,
-                        size: 16,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (onDelete != null)
+                          PopupMenuButton<String>(
+                            icon: const Icon(
+                              Icons.more_vert,
+                              size: 18,
+                              color: AppColors.textTertiary,
+                            ),
+                            color: AppColors.surface,
+                            onSelected: (value) {
+                              if (value == 'complete') {
+                                onMarkCompleted?.call();
+                              }
+                              if (value == 'delete') {
+                                onDelete!();
+                              }
+                            },
+                            itemBuilder: (context) {
+                              final items = <PopupMenuEntry<String>>[];
+
+                              if (activity.status != ActivityStatus.completed &&
+                                  onMarkCompleted != null) {
+                                items.add(
+                                  const PopupMenuItem<String>(
+                                    value: 'complete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.check_circle_outline,
+                                            color: AppColors.success),
+                                        SizedBox(width: 8),
+                                        Text('Mark completed'),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              items.add(
+                                const PopupMenuItem<String>(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline,
+                                          color: AppColors.error),
+                                      SizedBox(width: 8),
+                                      Text('Delete activity'),
+                                    ],
+                                  ),
+                                ),
+                              );
+
+                              return items;
+                            },
+                          ),
+                        Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            color: _typeColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Icon(
+                            Icons.chevron_right,
+                            color: _typeColor,
+                            size: 16,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

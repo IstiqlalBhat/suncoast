@@ -97,6 +97,67 @@ export async function createActivity(
   return data as Activity;
 }
 
+export async function deleteActivity(
+  supabase: SupabaseClient,
+  activityId: string,
+) {
+  const { error } = await supabase.from("activities").delete().eq("id", activityId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function updateActivityStatus(
+  supabase: SupabaseClient,
+  activityId: string,
+  status: Activity["status"],
+) {
+  const { data, error } = await supabase
+    .from("activities")
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", activityId)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as Activity;
+}
+
+export async function getLatestCompletedSessionForActivity(
+  supabase: SupabaseClient,
+  activityId: string,
+) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("User is not authenticated.");
+  }
+
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("*")
+    .eq("activity_id", activityId)
+    .eq("user_id", user.id)
+    .not("ended_at", "is", null)
+    .order("ended_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data?.[0] as SessionRecord | undefined) ?? null);
+}
+
 export async function getSessionHistory(
   supabase: SupabaseClient,
   userId: string,

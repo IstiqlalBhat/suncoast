@@ -89,6 +89,33 @@ class SessionRemoteDatasource {
     }
   }
 
+  Future<SessionModel?> getLatestCompletedSessionForActivity(
+    String activityId,
+    String userId,
+  ) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.sessionsTable)
+          .select()
+          .eq('activity_id', activityId)
+          .eq('user_id', userId)
+          .not('ended_at', 'is', null)
+          .order('ended_at', ascending: false)
+          .limit(1);
+
+      final rows = List<Map<String, dynamic>>.from(response as List);
+      if (rows.isEmpty) {
+        return null;
+      }
+
+      return SessionModel.fromJson(rows.first);
+    } catch (e) {
+      throw ServerException(
+        'Failed to fetch latest completed session: $e',
+      );
+    }
+  }
+
   Future<void> updateTranscript(String sessionId, String transcript) async {
     try {
       await _supabase

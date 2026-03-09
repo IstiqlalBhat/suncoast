@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { EventFeed } from "@/components/session/event-feed";
 import { SessionShell } from "@/components/session/session-shell";
 import { callFunction } from "@/lib/firebase-functions";
-import { createSession, endSession, getSessionAttachments } from "@/lib/data";
+import {
+  createSession,
+  endSession,
+  getSessionAttachments,
+} from "@/lib/data";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { createSignedFileUrl, uploadSessionFile } from "@/lib/storage";
 import type { Activity, MediaAttachment } from "@/lib/types";
@@ -33,6 +37,10 @@ export function MediaSessionClient({ activity }: MediaSessionClientProps) {
     const session = await createSession(supabase, {
       activityId: activity.id,
       mode: "media",
+    });
+    await callFunction("syncActivityStatus", {
+      sessionId: session.id,
+      status: "in_progress",
     });
     setSessionId(session.id);
     return session.id;
@@ -87,6 +95,10 @@ export function MediaSessionClient({ activity }: MediaSessionClientProps) {
 
     try {
       await endSession(supabase, sessionId);
+      await callFunction("syncActivityStatus", {
+        sessionId,
+        status: "completed",
+      });
       router.push(`/session/${activity.id}/summary?sessionId=${sessionId}`);
       router.refresh();
     } catch (finishError) {

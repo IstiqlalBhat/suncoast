@@ -10,6 +10,10 @@ class SettingsRepository {
   }) : _remoteDatasource = remoteDatasource;
 
   Future<Result<UserSettingsModel>> getSettings(String userId) async {
+    if (userId.trim().isEmpty) {
+      return const Result.failure('User is not authenticated');
+    }
+
     try {
       final settings = await _remoteDatasource.getSettings(userId);
       if (settings == null) {
@@ -28,6 +32,10 @@ class SettingsRepository {
   Future<Result<UserSettingsModel>> saveSettings(
     UserSettingsModel settings,
   ) async {
+    if (settings.userId.trim().isEmpty) {
+      return const Result.failure('User is not authenticated');
+    }
+
     try {
       final saved = await _remoteDatasource.upsertSettings(settings);
       return Result.success(saved);

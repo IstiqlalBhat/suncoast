@@ -55,4 +55,33 @@ class ActivityRepository {
       return Result.failure('Failed to create activity: $e');
     }
   }
+
+  Future<Result<void>> deleteActivity(String id) async {
+    try {
+      await _remoteDatasource.deleteActivity(id);
+      return const Result.success(null);
+    } catch (e) {
+      return Result.failure('Failed to delete activity: $e');
+    }
+  }
+
+  Future<Result<ActivityModel>> updateActivityStatus(
+    String id,
+    ActivityStatus status,
+  ) async {
+    try {
+      final activity = await _remoteDatasource.updateActivityStatus(
+        id,
+        switch (status) {
+          ActivityStatus.pending => 'pending',
+          ActivityStatus.inProgress => 'in_progress',
+          ActivityStatus.completed => 'completed',
+          ActivityStatus.cancelled => 'cancelled',
+        },
+      );
+      return Result.success(activity);
+    } catch (e) {
+      return Result.failure('Failed to update activity status: $e');
+    }
+  }
 }

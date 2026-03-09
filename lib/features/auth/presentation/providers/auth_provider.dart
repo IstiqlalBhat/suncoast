@@ -204,7 +204,7 @@ class LoginNotifier extends StateNotifier<LoginState> {
   }
 
   Future<void> disableBiometricLogin() async {
-    await _secureStorage.clearBiometricLoginData();
+    await _secureStorage.clearBiometricPreference();
   }
 
   Future<String?> _syncBiometricPreference(bool enableBiometric) async {

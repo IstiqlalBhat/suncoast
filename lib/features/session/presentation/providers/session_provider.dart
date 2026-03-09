@@ -281,6 +281,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
             conversationState: SessionConversationState.idle,
           ),
         );
+        unawaited(_syncActivityStatus(session.id, 'in_progress'));
         _startTimer();
         if (mode == SessionMode.passive) {
           _startAudioPipeline();
@@ -1037,7 +1038,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     final result = await _repository.endSession(sessionId);
 
     result.when(
-      success: (session) {
+      success: (session) async {
+        await _syncActivityStatus(session.id, 'completed');
         state = state.copyWith(
           session: session,
           isProcessing: false,
@@ -1081,6 +1083,22 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     _convErrorSub = null;
     await _conversationService?.stop();
     _conversationService = null;
+  }
+
+  Future<void> _syncActivityStatus(String sessionId, String status) async {
+    try {
+      await _apiClient.callFunction(
+        'syncActivityStatus',
+        data: {
+          'sessionId': sessionId,
+          'status': status,
+        },
+      );
+    } catch (error) {
+      _logger.e(
+        'Failed to sync activity status for session $sessionId: $error',
+      );
+    }
   }
 
   void reset() {

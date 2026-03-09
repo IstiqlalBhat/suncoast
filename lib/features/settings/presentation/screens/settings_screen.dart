@@ -74,6 +74,7 @@ class SettingsScreen extends ConsumerWidget {
             _SettingsTile(
               icon: Icons.face,
               title: AppStrings.enableFaceId,
+              subtitle: 'Uses the same device preference as the login screen',
               trailing: Switch(
                 value: settings.faceIdEnabled,
                 onChanged: (v) => _handleFaceIdToggle(context, ref, v),
