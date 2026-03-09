@@ -21,7 +21,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
   bool _isSignUp = false;
+  bool _autoBiometricAttempted = false;
+  bool _enableFaceId = false;
   final _nameController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadBiometricPreference();
+      _maybeAutoSignInWithBiometrics();
+    });
+  }
 
   @override
   void dispose() {
@@ -148,6 +159,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(height: AppDimensions.paddingL),
 
+                    CheckboxListTile(
+                      value: _enableFaceId,
+                      onChanged: loginState.isLoading
+                          ? null
+                          : (value) {
+                              setState(() {
+                                _enableFaceId = value ?? false;
+                              });
+                            },
+                      title: const Text(AppStrings.enableFaceId),
+                      subtitle: const Text(
+                        'Use Face ID automatically next time on this device',
+                      ),
+                      activeColor: AppColors.primary,
+                      checkColor: AppColors.background,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    const SizedBox(height: AppDimensions.paddingM),
+
                     // Sign In / Sign Up button
                     GradientButton(
                       label: _isSignUp ? AppStrings.signUp : AppStrings.login,
@@ -155,19 +186,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       onPressed: loginState.isLoading ? null : _handleSubmit,
                     ),
                     const SizedBox(height: AppDimensions.paddingM),
-
-                    // Face ID button
-                    if (!_isSignUp)
-                      OutlinedButton.icon(
-                        onPressed: loginState.isLoading
-                            ? null
-                            : () => ref
-                                  .read(loginProvider.notifier)
-                                  .signInWithBiometrics(),
-                        icon: const Icon(Icons.face),
-                        label: const Text(AppStrings.faceIdLogin),
-                      ),
-                    const SizedBox(height: AppDimensions.paddingL),
 
                     // Toggle sign in / sign up
                     TextButton(
@@ -203,12 +221,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         name: _nameController.text.trim().isEmpty
             ? null
             : _nameController.text.trim(),
+        enableBiometric: _enableFaceId,
       );
     } else {
       notifier.signIn(
         email: _emailController.text.trim(),
         password: _passwordController.text,
+        enableBiometric: _enableFaceId,
       );
     }
+  }
+
+  Future<void> _loadBiometricPreference() async {
+    if (!mounted) return;
+
+    final isEnabled = await ref
+        .read(secureStorageServiceProvider)
+        .isBiometricEnabled();
+
+    if (!mounted) return;
+    setState(() {
+      _enableFaceId = isEnabled;
+    });
+  }
+
+  Future<void> _maybeAutoSignInWithBiometrics() async {
+    if (!mounted || _autoBiometricAttempted || _isSignUp) return;
+    _autoBiometricAttempted = true;
+
+    final hasSession = ref.read(authRepositoryProvider).currentSession != null;
+    if (hasSession) return;
+
+    await ref.read(loginProvider.notifier).maybeAutoSignInWithBiometrics();
   }
 }

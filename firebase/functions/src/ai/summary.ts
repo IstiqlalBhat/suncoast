@@ -46,7 +46,7 @@ type SummaryResponse = {
 };
 
 export const generateSummary = onCall(
-  { secrets: [geminiKey, supabaseUrl, supabaseServiceKey] },
+  { secrets: [geminiKey, supabaseUrl, supabaseServiceKey], timeoutSeconds: 120 },
   async (request) => {
     const genAI = new GoogleGenerativeAI(geminiKey.value());
     const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
@@ -61,6 +61,7 @@ export const generateSummary = onCall(
     });
 
     try {
+      logger.info("Fetching session data from Supabase", { sessionId });
       const [sessionResult, eventsResult, attachmentsResult] = await Promise.all([
         supabase.from("sessions").select("*").eq("id", sessionId).single(),
         supabase
@@ -82,6 +83,12 @@ export const generateSummary = onCall(
       const session = sessionResult.data;
       const events = (eventsResult.data || []) as EventRecord[];
       const attachments = (attachmentsResult.data || []) as AttachmentRecord[];
+      logger.info("Supabase data fetched", {
+        sessionId,
+        hasSession: !!session,
+        eventCount: events.length,
+        attachmentCount: attachments.length,
+      });
 
       // Calculate duration
       const startedAt = new Date(session.started_at);
@@ -92,7 +99,7 @@ export const generateSummary = onCall(
         (endedAt.getTime() - startedAt.getTime()) / 1000
       );
 
-      const model = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
+      const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
       const activityResult = await supabase
         .from("activities")
@@ -159,13 +166,17 @@ Provide a structured summary as JSON:
 
 Return valid JSON only. Keep dates in ISO-8601 or null.`;
 
+      logger.info("Calling Gemini model", { sessionId, model: "gemini-3-flash-preview" });
       const result = await model.generateContent(prompt);
       const text = result.response.text();
+      logger.info("Gemini response received", { sessionId, responseLength: text.length });
 
-      const jsonMatch = text.match(/\{[\s\S]*?\}(?=[^}]*$)/s) || text.match(/\{[\s\S]*\}/);
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
       const parsed: SummaryResponse = jsonMatch ?
         JSON.parse(jsonMatch[0]) as SummaryResponse :
         buildFallbackSummary(events, durationSeconds);
+
+      logger.info("Summary parsed", { sessionId, hasObservation: !!parsed.observation_summary });
 
       // Insert summary into Supabase
       const summaryData = {

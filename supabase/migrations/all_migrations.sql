@@ -328,6 +328,15 @@ ALTER TABLE public.session_summaries
     ADD COLUMN IF NOT EXISTS external_records JSONB NOT NULL DEFAULT '[]'::jsonb,
     ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
 
+CREATE POLICY "Users can update own summaries"
+    ON session_summaries FOR UPDATE
+    USING (
+        session_id IN (SELECT id FROM sessions WHERE user_id = auth.uid())
+    )
+    WITH CHECK (
+        session_id IN (SELECT id FROM sessions WHERE user_id = auth.uid())
+    );
+
 -- Buckets
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (

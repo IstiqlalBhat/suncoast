@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/network/api_client.dart';
 import '../../core/constants/api_endpoints.dart';
 
-enum TtsEngine { device, elevenLabs }
+enum TtsEngine { device, openai }
 
 class AudioPlaybackService {
   final FlutterTts _flutterTts = FlutterTts();
@@ -44,7 +44,7 @@ class AudioPlaybackService {
       if (_currentEngine == TtsEngine.device) {
         await _flutterTts.speak(text);
       } else {
-        await _speakWithElevenLabs(text);
+        await _speakWithOpenAI(text);
       }
     } catch (e) {
       _logger.e('TTS failed: $e');
@@ -53,17 +53,17 @@ class AudioPlaybackService {
     }
   }
 
-  Future<void> _speakWithElevenLabs(String text) async {
+  Future<void> _speakWithOpenAI(String text) async {
     if (_apiClient == null) {
-      _logger.w('No API client for ElevenLabs, falling back to device TTS');
+      _logger.w('No API client for OpenAI TTS, falling back to device TTS');
       await _flutterTts.speak(text);
       return;
     }
 
     try {
       final response = await _apiClient.callFunction(
-        ApiEndpoints.elevenLabsTts,
-        data: {'text': text},
+        ApiEndpoints.openaiTts,
+        data: {'text': text, 'voice': 'nova'},
       );
 
       final audioBase64 = response['audio'] as String?;
@@ -71,19 +71,17 @@ class AudioPlaybackService {
         throw Exception('No audio in response');
       }
 
-      // Decode and play audio
       final audioBytes = Uint8List.fromList(base64Decode(audioBase64));
       final tempDir = await getTemporaryDirectory();
       final audioFile = File('${tempDir.path}/fieldflow_tts.mp3');
       await audioFile.writeAsBytes(audioBytes, flush: true);
       await _audioPlayer.setFilePath(audioFile.path);
       await _audioPlayer.play();
-      // Clean up temp file after playback
       try {
         await audioFile.delete();
       } catch (_) {}
     } catch (e) {
-      _logger.e('ElevenLabs TTS failed: $e');
+      _logger.e('OpenAI TTS failed: $e');
       rethrow;
     }
   }

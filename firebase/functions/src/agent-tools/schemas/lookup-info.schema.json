@@ -1,0 +1,72 @@
+{
+  "type": "webhook",
+  "name": "lookup_info",
+  "description": "Look up reference information, procedures, contacts, or past observations. Use this when the user asks a question that requires checking stored knowledge or history.",
+  "api_schema": {
+    "url": "https://us-central1-alchemy-4bc7c.cloudfunctions.net/agentLookupInfo",
+    "method": "POST",
+    "path_params_schema": [],
+    "query_params_schema": [],
+    "request_body_schema": {
+      "id": "body",
+      "type": "object",
+      "description": "Lookup query from the field worker",
+      "properties": [
+        {
+          "id": "query",
+          "type": "string",
+          "value_type": "llm_prompt",
+          "description": "What the user wants to know about",
+          "dynamic_variable": "",
+          "constant_value": "",
+          "enum": null,
+          "is_system_provided": false,
+          "required": true
+        },
+        {
+          "id": "lookup_type",
+          "type": "string",
+          "value_type": "llm_prompt",
+          "description": "What kind of information they are looking for. Use one of: procedure, contact, history, general",
+          "dynamic_variable": "",
+          "constant_value": "",
+          "enum": null,
+          "is_system_provided": false,
+          "required": false
+        },
+        {
+          "id": "session_id",
+          "type": "string",
+          "value_type": "llm_prompt",
+          "description": "The current FieldFlow session ID. Use the session_id from the conversation context.",
+          "dynamic_variable": "",
+          "constant_value": "",
+          "enum": null,
+          "is_system_provided": false,
+          "required": true
+        }
+      ],
+      "required": false,
+      "value_type": "llm_prompt"
+    },
+    "request_headers": [
+      {
+        "type": "value",
+        "name": "Content-Type",
+        "value": "application/json"
+      }
+    ],
+    "auth_connection": null
+  },
+  "response_timeout_secs": 30,
+  "dynamic_variables": {
+    "dynamic_variable_placeholders": {}
+  },
+  "assignments": [],
+  "disable_interruptions": false,
+  "force_pre_tool_speech": "auto",
+  "tool_call_sound": null,
+  "tool_call_sound_behavior": "auto",
+  "execution_mode": "immediate",
+  "tool_error_handling_mode": "auto"
+}

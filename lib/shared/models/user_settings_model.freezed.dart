@@ -217,7 +217,7 @@ return $default(_that.id,_that.userId,_that.faceIdEnabled,_that.voiceOutputEnabl
 @JsonSerializable()
 
 class _UserSettingsModel implements UserSettingsModel {
-  const _UserSettingsModel({required this.id, @JsonKey(name: 'user_id') required this.userId, @JsonKey(name: 'face_id_enabled') this.faceIdEnabled = false, @JsonKey(name: 'voice_output_enabled') this.voiceOutputEnabled = true, @JsonKey(name: 'voice_id') this.voiceId, @JsonKey(name: 'voice_speed') this.voiceSpeed = 1.0, @JsonKey(name: 'confirmation_mode') this.confirmationMode = ConfirmationMode.smart, this.language = 'en', @JsonKey(name: 'use_premium_tts') this.usePremiumTts = false});
+  const _UserSettingsModel({required this.id, @JsonKey(name: 'user_id') required this.userId, @JsonKey(name: 'face_id_enabled') this.faceIdEnabled = false, @JsonKey(name: 'voice_output_enabled') this.voiceOutputEnabled = true, @JsonKey(name: 'voice_id') this.voiceId, @JsonKey(name: 'voice_speed') this.voiceSpeed = 1.0, @JsonKey(name: 'confirmation_mode') this.confirmationMode = ConfirmationMode.smart, this.language = 'en', @JsonKey(name: 'use_premium_tts') this.usePremiumTts = true});
   factory _UserSettingsModel.fromJson(Map<String, dynamic> json) => _$UserSettingsModelFromJson(json);
 
 @override final  String id;

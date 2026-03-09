@@ -23,6 +23,24 @@ class SummaryRemoteDatasource {
     }
   }
 
+  Future<SessionSummaryModel> updateSummary(
+    String sessionId,
+    Map<String, dynamic> fields,
+  ) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.sessionSummariesTable)
+          .update(fields)
+          .eq('session_id', sessionId)
+          .select()
+          .single();
+
+      return SessionSummaryModel.fromJson(response);
+    } catch (e) {
+      throw ServerException('Failed to update summary: $e');
+    }
+  }
+
   Future<void> confirmSummary(String sessionId) async {
     try {
       await _supabase

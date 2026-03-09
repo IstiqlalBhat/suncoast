@@ -78,6 +78,17 @@ class SessionRemoteDatasource {
     }
   }
 
+  Future<void> deleteSession(String sessionId) async {
+    try {
+      await _supabase
+          .from(ApiEndpoints.sessionsTable)
+          .delete()
+          .eq('id', sessionId);
+    } catch (e) {
+      throw ServerException('Failed to delete session: $e');
+    }
+  }
+
   Future<void> updateTranscript(String sessionId, String transcript) async {
     try {
       await _supabase
@@ -101,6 +112,35 @@ class SessionRemoteDatasource {
         .map(
           (data) => data.map((json) => AiEventModel.fromJson(json)).toList(),
         );
+  }
+
+  Future<AiEventModel> updateAiEvent(
+    String eventId,
+    Map<String, dynamic> fields,
+  ) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.aiEventsTable)
+          .update(fields)
+          .eq('id', eventId)
+          .select()
+          .single();
+
+      return AiEventModel.fromJson(response);
+    } catch (e) {
+      throw ServerException('Failed to update AI event: $e');
+    }
+  }
+
+  Future<void> deleteAiEvent(String eventId) async {
+    try {
+      await _supabase
+          .from(ApiEndpoints.aiEventsTable)
+          .delete()
+          .eq('id', eventId);
+    } catch (e) {
+      throw ServerException('Failed to delete AI event: $e');
+    }
   }
 
   Future<List<AiEventModel>> getSessionEvents(String sessionId) async {

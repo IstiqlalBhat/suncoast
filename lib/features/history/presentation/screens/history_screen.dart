@@ -4,20 +4,39 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
+import '../../../session/presentation/providers/session_provider.dart';
 import '../providers/history_provider.dart';
 
-class HistoryScreen extends ConsumerWidget {
+class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HistoryScreen> createState() => _HistoryScreenState();
+}
+
+class _HistoryScreenState extends ConsumerState<HistoryScreen> {
+  List<Map<String, dynamic>>? _localSessions;
+
+  @override
+  Widget build(BuildContext context) {
     final sessionsAsync = ref.watch(sessionHistoryProvider);
+
+    // Sync local list from provider when new data arrives
+    ref.listen(sessionHistoryProvider, (_, next) {
+      next.whenData((data) {
+        setState(() => _localSessions = List.of(data));
+      });
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('Session History'), centerTitle: false),
       body: sessionsAsync.when(
         data: (sessions) {
-          if (sessions.isEmpty) {
+          final displaySessions = _localSessions ?? List.of(sessions);
+          // Initialize local copy on first load
+          _localSessions ??= displaySessions;
+
+          if (displaySessions.isEmpty) {
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -53,18 +72,41 @@ class HistoryScreen extends ConsumerWidget {
             color: AppColors.primary,
             child: ListView.builder(
               padding: const EdgeInsets.all(AppDimensions.paddingM),
-              itemCount: sessions.length,
+              itemCount: displaySessions.length,
               itemBuilder: (context, index) {
-                final session = sessions[index];
-                return _SessionHistoryCard(
-                  session: session,
-                  onTap: () {
-                    if (session['activity_id'] != null) {
-                      context.push(
-                        '/session/${session['activity_id']}/summary',
-                      );
+                final session = displaySessions[index];
+                final sessionId = session['id'] as String?;
+                return Dismissible(
+                  key: ValueKey(sessionId ?? index),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: AppDimensions.paddingL),
+                    margin: const EdgeInsets.only(bottom: AppDimensions.paddingS),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(AppDimensions.radiusL),
+                    ),
+                    child: const Icon(Icons.delete_outline, color: AppColors.error),
+                  ),
+                  confirmDismiss: (_) => _confirmDelete(context),
+                  onDismissed: (_) {
+                    // Remove from local list immediately so the widget tree is consistent
+                    setState(() => _localSessions!.removeAt(index));
+                    if (sessionId != null) {
+                      ref.read(sessionRepositoryProvider).deleteSession(sessionId);
                     }
                   },
+                  child: _SessionHistoryCard(
+                    session: session,
+                    onTap: () {
+                      if (session['activity_id'] != null && sessionId != null) {
+                        context.push(
+                          '/session/${session['activity_id']}/summary?sessionId=$sessionId',
+                        );
+                      }
+                    },
+                  ),
                 );
               },
             ),
@@ -88,6 +130,30 @@ class HistoryScreen extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<bool?> _confirmDelete(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Delete Session'),
+        content: const Text(
+          'This will permanently delete the session and all its events, attachments, and summary.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }

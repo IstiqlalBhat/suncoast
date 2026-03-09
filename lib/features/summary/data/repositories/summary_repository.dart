@@ -1,30 +1,44 @@
-import '../../../../core/network/api_client.dart';
-import '../../../../core/constants/api_endpoints.dart';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:logger/logger.dart';
+
 import '../../../../core/utils/result.dart';
 import '../../../../shared/models/session_summary_model.dart';
 import '../datasources/summary_remote_datasource.dart';
 
 class SummaryRepository {
   final SummaryRemoteDatasource _remoteDatasource;
-  final ApiClient _apiClient;
+  final _logger = Logger();
 
-  const SummaryRepository({
+  SummaryRepository({
     required SummaryRemoteDatasource remoteDatasource,
-    required ApiClient apiClient,
   }) : _remoteDatasource = remoteDatasource,
-       _apiClient = apiClient;
+       super();
 
   Future<Result<SessionSummaryModel>> generateAndFetchSummary(
     String sessionId,
   ) async {
     try {
-      // Call Firebase Cloud Function to generate summary
-      final response = await _apiClient.callFunction(
-        ApiEndpoints.generateSummary,
-        data: {'sessionId': sessionId},
+      // Call generateSummary via HTTP (bypasses Firebase callable SDK issues)
+      final url = Uri.parse(
+        'https://us-central1-alchemy-4bc7c.cloudfunctions.net/generateSummary',
+      );
+      final httpResponse = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'data': {'sessionId': sessionId}}),
       );
 
-      final inlineSummary = response['summary'];
+      if (httpResponse.statusCode != 200) {
+        _logger.e('Summary HTTP error: ${httpResponse.statusCode} ${httpResponse.body}');
+        return Result.failure('Summary generation failed (${httpResponse.statusCode})');
+      }
+
+      final responseBody = jsonDecode(httpResponse.body) as Map<String, dynamic>;
+      final result = responseBody['result'] as Map<String, dynamic>?;
+      final inlineSummary = result?['summary'];
+
       if (inlineSummary is Map) {
         return Result.success(
           SessionSummaryModel.fromJson(
@@ -33,13 +47,14 @@ class SummaryRepository {
         );
       }
 
-      // Fetch the generated summary from Supabase
+      // Fetch the generated summary from Supabase as fallback
       final summary = await _remoteDatasource.getSummary(sessionId);
       if (summary == null) {
         return const Result.failure('Summary not found after generation');
       }
       return Result.success(summary);
     } catch (e) {
+      _logger.e('generateAndFetchSummary failed: $e');
       return Result.failure('Failed to generate summary: $e');
     }
   }
@@ -53,6 +68,18 @@ class SummaryRepository {
       return Result.success(summary);
     } catch (e) {
       return Result.failure('Failed to fetch summary: $e');
+    }
+  }
+
+  Future<Result<SessionSummaryModel>> updateSummary(
+    String sessionId,
+    Map<String, dynamic> fields,
+  ) async {
+    try {
+      final summary = await _remoteDatasource.updateSummary(sessionId, fields);
+      return Result.success(summary);
+    } catch (e) {
+      return Result.failure('Failed to update summary: $e');
     }
   }
 

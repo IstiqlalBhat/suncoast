@@ -21,7 +21,7 @@ _UserSettingsModel _$UserSettingsModelFromJson(Map<String, dynamic> json) =>
           ) ??
           ConfirmationMode.smart,
       language: json['language'] as String? ?? 'en',
-      usePremiumTts: json['use_premium_tts'] as bool? ?? false,
+      usePremiumTts: json['use_premium_tts'] as bool? ?? true,
     );
 
 Map<String, dynamic> _$UserSettingsModelToJson(

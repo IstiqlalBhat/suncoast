@@ -76,8 +76,7 @@ class SettingsScreen extends ConsumerWidget {
               title: AppStrings.enableFaceId,
               trailing: Switch(
                 value: settings.faceIdEnabled,
-                onChanged: (v) =>
-                    ref.read(settingsProvider.notifier).updateFaceId(v),
+                onChanged: (v) => _handleFaceIdToggle(context, ref, v),
               ),
             ),
             const SizedBox(height: AppDimensions.paddingM),
@@ -95,7 +94,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
             _SettingsTile(
               icon: Icons.auto_awesome,
-              title: 'Premium Voice (ElevenLabs)',
+              title: 'Premium Voice (OpenAI)',
               subtitle: 'Higher quality AI voice',
               trailing: Switch(
                 value: settings.usePremiumTts,
@@ -200,6 +199,19 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _handleFaceIdToggle(
+    BuildContext context,
+    WidgetRef ref,
+    bool enabled,
+  ) async {
+    final message = await ref.read(settingsProvider.notifier).updateFaceId(enabled);
+    if (message == null || !context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 }

@@ -177,140 +177,161 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
               ),
               const SizedBox(height: AppDimensions.paddingM),
 
-              // Media timeline / uploaded items
-              Container(
-                constraints: const BoxConstraints(
-                  minHeight: 120,
-                  maxHeight: 220,
-                ),
-                margin: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.paddingM,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.surface.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-                  border: Border.all(
-                    color: AppColors.media.withValues(alpha: 0.2),
-                    style: BorderStyle.solid,
-                  ),
-                ),
-                child: sessionState.mediaItems.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.add_photo_alternate_outlined,
-                              color: AppColors.media.withValues(alpha: 0.5),
-                              size: 36,
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Tap capture to add media',
-                              style: TextStyle(
-                                color: AppColors.textTertiary,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(AppDimensions.paddingM),
-                        itemCount: sessionState.mediaItems.length,
-                        separatorBuilder: (context, index) =>
-                            const SizedBox(height: AppDimensions.paddingS),
-                        itemBuilder: (context, index) {
-                          final item = sessionState.mediaItems[index];
-                          return _MediaAttachmentCard(item: item);
-                        },
-                      ),
-              ),
-              const SizedBox(height: AppDimensions.paddingM),
-
-              // Event feed
+              // Media timeline + Event feed (share remaining space)
               Expanded(
-                child: sessionId != null
-                    ? ref
-                          .watch(sessionEventsProvider(sessionId))
-                          .when(
-                            data: (events) => EventFeed(events: events),
-                            loading: () => const Center(
-                              child: CircularProgressIndicator(
-                                color: AppColors.media,
+                child: Column(
+                  children: [
+                    // Media timeline / uploaded items
+                    Flexible(
+                      flex: sessionState.mediaItems.isEmpty ? 0 : 1,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: AppDimensions.paddingM,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+                          border: Border.all(
+                            color: AppColors.media.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: sessionState.mediaItems.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.symmetric(vertical: AppDimensions.paddingM),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      color: AppColors.media.withValues(alpha: 0.5),
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Tap capture to add media',
+                                      style: TextStyle(
+                                        color: AppColors.textTertiary,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                padding: const EdgeInsets.all(AppDimensions.paddingS),
+                                itemCount: sessionState.mediaItems.length,
+                                separatorBuilder: (context, index) =>
+                                    const SizedBox(height: AppDimensions.paddingS),
+                                itemBuilder: (context, index) {
+                                  final item = sessionState.mediaItems[index];
+                                  return _MediaAttachmentCard(item: item);
+                                },
                               ),
-                            ),
-                            error: (e, _) => const Center(
-                              child: Text(
-                                'Error loading events',
-                                style: TextStyle(color: AppColors.error),
-                              ),
-                            ),
-                          )
-                    : const EventFeed(events: []),
+                      ),
+                    ),
+                    const SizedBox(height: AppDimensions.paddingS),
+
+                    // Event feed
+                    Expanded(
+                      child: sessionId != null
+                          ? ref
+                                .watch(sessionEventsProvider(sessionId))
+                                .when(
+                                  data: (events) => EventFeed(
+                                    events: events,
+                                    onEditEvent: (event, fields) => ref
+                                        .read(sessionRepositoryProvider)
+                                        .updateAiEvent(event.id, fields),
+                                    onDeleteEvent: (event) => ref
+                                        .read(sessionRepositoryProvider)
+                                        .deleteAiEvent(event.id),
+                                  ),
+                                  loading: () => const Center(
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.media,
+                                    ),
+                                  ),
+                                  error: (e, _) => const Center(
+                                    child: Text(
+                                      'Error loading events',
+                                      style: TextStyle(color: AppColors.error),
+                                    ),
+                                  ),
+                                )
+                          : const EventFeed(events: []),
+                    ),
+                  ],
+                ),
               ),
 
               // Bottom controls
               Padding(
-                padding: const EdgeInsets.all(AppDimensions.paddingL),
-                child: Column(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDimensions.paddingL,
+                  vertical: AppDimensions.paddingS,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTapDown: (_) {
-                        ref
-                            .read(activeSessionProvider.notifier)
-                            .startInteractiveTurn();
-                      },
-                      onTapUp: (_) {
-                        ref
-                            .read(activeSessionProvider.notifier)
-                            .finishInteractiveTurn();
-                      },
-                      onTapCancel: () {
-                        ref
-                            .read(activeSessionProvider.notifier)
-                            .finishInteractiveTurn();
-                      },
-                      child: Container(
-                        width: 88,
-                        height: 88,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: isHolding
-                              ? AppGradients.mediaGradient
-                              : null,
-                          color: isHolding
-                              ? null
-                              : AppColors.media.withValues(alpha: 0.15),
-                          border: Border.all(
-                            color: AppColors.media.withValues(
-                              alpha: isHolding ? 0.8 : 0.3,
+                    _MediaControlButton(
+                      icon: sessionState.isMuted
+                          ? Icons.mic_off
+                          : Icons.mic,
+                      label: sessionState.isMuted ? 'Unmute' : 'Mute',
+                      color: AppColors.media,
+                      onTap: () => ref
+                          .read(activeSessionProvider.notifier)
+                          .toggleMute(),
+                    ),
+                    // Hold-to-talk + Capture column
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTapDown: (_) {
+                            ref
+                                .read(activeSessionProvider.notifier)
+                                .startInteractiveTurn();
+                          },
+                          onTapUp: (_) {
+                            ref
+                                .read(activeSessionProvider.notifier)
+                                .finishInteractiveTurn();
+                          },
+                          onTapCancel: () {
+                            ref
+                                .read(activeSessionProvider.notifier)
+                                .finishInteractiveTurn();
+                          },
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: isHolding
+                                  ? AppGradients.mediaGradient
+                                  : null,
+                              color: isHolding
+                                  ? null
+                                  : AppColors.media.withValues(alpha: 0.15),
+                              border: Border.all(
+                                color: AppColors.media.withValues(
+                                  alpha: isHolding ? 0.8 : 0.3,
+                                ),
+                                width: 2,
+                              ),
                             ),
-                            width: 2,
+                            child: Icon(
+                              isHolding ? Icons.mic : Icons.mic_none,
+                              color: isHolding ? Colors.white : AppColors.media,
+                              size: 28,
+                            ),
                           ),
                         ),
-                        child: Icon(
-                          isHolding ? Icons.mic : Icons.mic_none,
-                          color: isHolding ? Colors.white : AppColors.media,
-                          size: 40,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppDimensions.paddingM),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _MediaControlButton(
-                          icon: sessionState.isMuted
-                              ? Icons.mic_off
-                              : Icons.mic,
-                          label: sessionState.isMuted ? 'Unmute' : 'Mute',
-                          color: AppColors.media,
-                          onTap: () => ref
-                              .read(activeSessionProvider.notifier)
-                              .toggleMute(),
-                        ),
+                        const SizedBox(height: 6),
                         _MediaControlButton(
                           icon: _selectedCapture == 'photo'
                               ? Icons.camera
@@ -324,13 +345,13 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
                           isLarge: true,
                           onTap: _handleCapture,
                         ),
-                        _MediaControlButton(
-                          icon: Icons.stop_circle,
-                          label: 'End',
-                          color: AppColors.error,
-                          onTap: () => _endSession(context),
-                        ),
                       ],
+                    ),
+                    _MediaControlButton(
+                      icon: Icons.stop_circle,
+                      label: 'End',
+                      color: AppColors.error,
+                      onTap: () => _endSession(context),
                     ),
                   ],
                 ),

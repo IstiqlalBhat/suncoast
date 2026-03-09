@@ -23,7 +23,7 @@ abstract class UserSettingsModel with _$UserSettingsModel {
     @JsonKey(name: 'voice_speed') @Default(1.0) double voiceSpeed,
     @JsonKey(name: 'confirmation_mode') @Default(ConfirmationMode.smart) ConfirmationMode confirmationMode,
     @Default('en') String language,
-    @JsonKey(name: 'use_premium_tts') @Default(false) bool usePremiumTts,
+    @JsonKey(name: 'use_premium_tts') @Default(true) bool usePremiumTts,
   }) = _UserSettingsModel;
 
   factory UserSettingsModel.fromJson(Map<String, dynamic> json) =>

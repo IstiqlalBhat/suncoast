@@ -14,6 +14,7 @@ import '../../../../shared/providers/app_providers.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../services/audio/audio_playback_service.dart';
 import '../../../../services/audio/audio_recording_service.dart';
+import '../../../../services/conversation/elevenlabs_conversation_service.dart';
 import '../../../../services/media/camera_service.dart';
 import '../../../../services/media/media_upload_service.dart';
 import '../../../dashboard/data/repositories/activity_repository.dart';
@@ -117,6 +118,7 @@ class ActiveSessionState {
   final SessionConversationState conversationState;
   final List<Map<String, dynamic>> referenceCards;
   final List<SessionMediaItem> mediaItems;
+  final bool isConversationActive;
 
   const ActiveSessionState({
     this.session,
@@ -133,6 +135,7 @@ class ActiveSessionState {
     this.conversationState = SessionConversationState.idle,
     this.referenceCards = const [],
     this.mediaItems = const [],
+    this.isConversationActive = false,
   });
 
   ActiveSessionState copyWith({
@@ -150,6 +153,7 @@ class ActiveSessionState {
     SessionConversationState? conversationState,
     List<Map<String, dynamic>>? referenceCards,
     List<SessionMediaItem>? mediaItems,
+    bool? isConversationActive,
   }) {
     return ActiveSessionState(
       session: session ?? this.session,
@@ -168,6 +172,7 @@ class ActiveSessionState {
       conversationState: conversationState ?? this.conversationState,
       referenceCards: referenceCards ?? this.referenceCards,
       mediaItems: mediaItems ?? this.mediaItems,
+      isConversationActive: isConversationActive ?? this.isConversationActive,
     );
   }
 }
@@ -196,6 +201,14 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   String _lastProcessedTranscript = '';
   bool _isAiProcessing = false;
   bool _playbackInitialized = false;
+
+  // ElevenLabs Conversational AI
+  ElevenLabsConversationService? _conversationService;
+  StreamSubscription<ConversationStatus>? _convStatusSub;
+  StreamSubscription<String>? _convUserTranscriptSub;
+  StreamSubscription<String>? _convAgentResponseSub;
+  StreamSubscription<bool>? _convAgentSpeakingSub;
+  StreamSubscription<String>? _convErrorSub;
 
   ActiveSessionNotifier({
     required SessionRepository repository,
@@ -271,6 +284,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         _startTimer();
         if (mode == SessionMode.passive) {
           _startAudioPipeline();
+        } else if (mode == SessionMode.chat) {
+          _startConversation();
         }
       },
       failure: (message, _) {
@@ -332,11 +347,116 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
 
     final settings = _readSettings();
-    if (settings != null) {
-      await _audioPlaybackService.setSpeed(settings.voiceSpeed);
-      _audioPlaybackService.setEngine(
-        settings.usePremiumTts ? TtsEngine.elevenLabs : TtsEngine.device,
+    final usePremium = settings?.usePremiumTts ?? true;
+    await _audioPlaybackService.setSpeed(settings?.voiceSpeed ?? 1.0);
+    _audioPlaybackService.setEngine(
+      usePremium ? TtsEngine.openai : TtsEngine.device,
+    );
+  }
+
+  /// Start ElevenLabs real-time voice conversation for chat mode.
+  /// Falls back to push-to-talk if connection fails.
+  Future<void> _startConversation() async {
+    if (state.session == null) return;
+
+    try {
+      _conversationService = ElevenLabsConversationService(
+        apiClient: _apiClient,
       );
+
+      // Listen to conversation events
+      _convStatusSub = _conversationService!.statusStream.listen((status) {
+        if (!mounted) return;
+        if (status == ConversationStatus.error ||
+            status == ConversationStatus.disconnected) {
+          _setStateIfMounted(
+            (current) => current.copyWith(isConversationActive: false),
+          );
+        }
+      });
+
+      _convUserTranscriptSub =
+          _conversationService!.userTranscriptStream.listen((transcript) {
+        if (!mounted || state.session == null) return;
+        final updated = [
+          state.transcript,
+          'User: $transcript',
+        ].where((s) => s.trim().isNotEmpty).join('\n');
+        _setStateIfMounted((current) => current.copyWith(transcript: updated));
+        _repository.updateTranscript(state.session!.id, updated);
+      });
+
+      _convAgentResponseSub =
+          _conversationService!.agentResponseStream.listen((response) {
+        if (!mounted || state.session == null) return;
+        final updated = [
+          state.transcript,
+          'AI: $response',
+        ].where((s) => s.trim().isNotEmpty).join('\n');
+        _setStateIfMounted(
+          (current) => current.copyWith(
+            transcript: updated,
+            aiResponse: response,
+          ),
+        );
+        _repository.updateTranscript(state.session!.id, updated);
+      });
+
+      _convAgentSpeakingSub =
+          _conversationService!.agentSpeakingStream.listen((speaking) {
+        if (!mounted) return;
+        _setStateIfMounted(
+          (current) => current.copyWith(
+            conversationState: speaking
+                ? SessionConversationState.aiSpeaking
+                : SessionConversationState.idle,
+          ),
+        );
+      });
+
+      _convErrorSub =
+          _conversationService!.errorStream.listen((error) {
+        if (!mounted) return;
+        _logger.e('Conversation error: $error');
+        _setStateIfMounted((current) => current.copyWith(error: error));
+      });
+
+      // Connect to ElevenLabs
+      await _conversationService!.start(
+        sessionId: state.session!.id,
+        activityContext: state.activityContext,
+      );
+
+      // Start mic and pipe audio to the conversation service
+      final hasPermission = await _audioService.hasPermission();
+      if (!hasPermission) {
+        throw Exception('Microphone permission required');
+      }
+
+      _ensureAmplitudeSubscription();
+      final stream = _audioService.startStream();
+      _interactiveAudioSub = stream.listen((chunk) {
+        if (!state.isMuted &&
+            state.conversationState != SessionConversationState.aiSpeaking) {
+          _conversationService?.sendAudioChunk(chunk);
+        }
+      });
+
+      _setStateIfMounted(
+        (current) => current.copyWith(isConversationActive: true),
+      );
+      _logger.i('ElevenLabs conversation started successfully');
+    } catch (e) {
+      _logger.e('Failed to start conversation, falling back to push-to-talk: $e');
+      _setStateIfMounted(
+        (current) => current.copyWith(
+          isConversationActive: false,
+          error: 'Voice agent unavailable. Using push-to-talk.',
+        ),
+      );
+      // Clean up failed conversation
+      await _conversationService?.dispose();
+      _conversationService = null;
     }
   }
 
@@ -363,7 +483,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         },
       );
 
-      // Send audio chunks to Deepgram every 3 seconds
+      // Send audio chunks for transcription every few seconds
       _transcriptionTimer = Timer.periodic(
         _transcriptionInterval,
         (_) => _sendAudioChunk(),
@@ -383,23 +503,21 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     final chunk = Uint8List.fromList(_audioBuffer);
     _audioBuffer.clear();
 
+    _logger.i('Sending audio chunk: ${chunk.length} bytes');
+
     try {
-      final result = await _apiClient.callDeepgramProxy(chunk);
+      final result = await _apiClient.transcribeAudio(chunk);
+      final transcriptText = (result['transcript'] as String? ?? '').trim();
 
-      // Extract transcript from Deepgram response
-      final alternatives = result['results']?['channels']?[0]?['alternatives'];
-      if (alternatives != null && (alternatives as List).isNotEmpty) {
-        final transcriptText = alternatives[0]['transcript'] as String? ?? '';
-        if (transcriptText.isNotEmpty) {
-          final newTranscript = '${state.transcript} $transcriptText'.trim();
-          state = state.copyWith(transcript: newTranscript);
+      if (transcriptText.isNotEmpty) {
+        final newTranscript = '${state.transcript} $transcriptText'.trim();
+        state = state.copyWith(transcript: newTranscript);
 
-          // Update transcript in Supabase
-          await _repository.updateTranscript(state.session!.id, newTranscript);
+        // Update transcript in Supabase
+        await _repository.updateTranscript(state.session!.id, newTranscript);
 
-          // Process with Gemini after a meaningful amount of new content arrives.
-          await _maybeProcessWithAI();
-        }
+        // Process with Gemini after a meaningful amount of new content arrives.
+        await _maybeProcessWithAI();
       }
     } catch (e) {
       _logger.e('Transcription failed: $e');
@@ -453,6 +571,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       state.conversationState == SessionConversationState.userSpeaking;
 
   Future<void> startInteractiveTurn() async {
+    // Skip push-to-talk when ElevenLabs conversation is active
+    if (state.isConversationActive) return;
+
     if (state.session == null) {
       _setStateIfMounted(
         (current) => current.copyWith(error: 'Session is still starting.'),
@@ -503,6 +624,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   Future<String?> finishInteractiveTurn() async {
+    if (state.isConversationActive) return null;
     if (!isInteractiveCaptureActive || state.session == null) return null;
 
     state = state.copyWith(
@@ -530,13 +652,13 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       final audioBytes = Uint8List.fromList(_interactiveAudioBuffer);
       _interactiveAudioBuffer.clear();
 
-      final result = await _apiClient.callDeepgramProxy(audioBytes);
-      final deepgramError = result['error'];
-      if (deepgramError != null) {
-        final message = deepgramError is String
-            ? deepgramError
-            : deepgramError.toString();
-        _logger.e('Deepgram interactive turn failed: $message');
+      final result = await _apiClient.transcribeAudio(audioBytes);
+      final whisperError = result['error'];
+      if (whisperError != null) {
+        final message = whisperError is String
+            ? whisperError
+            : whisperError.toString();
+        _logger.e('Whisper interactive turn failed: $message');
         state = state.copyWith(
           conversationState: SessionConversationState.idle,
           isProcessing: false,
@@ -544,10 +666,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         );
         return null;
       }
-      final alternatives = result['results']?['channels']?[0]?['alternatives'];
-      final transcriptText = alternatives is List && alternatives.isNotEmpty
-          ? (alternatives[0]['transcript'] as String? ?? '').trim()
-          : '';
+      final transcriptText = (result['transcript'] as String? ?? '').trim();
 
       if (transcriptText.isEmpty) {
         state = state.copyWith(
@@ -890,6 +1009,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     if (state.session == null) return null;
     final sessionId = state.session!.id;
 
+    // Stop ElevenLabs conversation if active
+    await _stopConversation();
+
     // Stop audio pipeline
     _transcriptionTimer?.cancel();
     await _audioStreamSub?.cancel();
@@ -946,7 +1068,23 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     state = state.copyWith(transcript: '${state.transcript} $text'.trim());
   }
 
+  Future<void> _stopConversation() async {
+    await _convStatusSub?.cancel();
+    await _convUserTranscriptSub?.cancel();
+    await _convAgentResponseSub?.cancel();
+    await _convAgentSpeakingSub?.cancel();
+    await _convErrorSub?.cancel();
+    _convStatusSub = null;
+    _convUserTranscriptSub = null;
+    _convAgentResponseSub = null;
+    _convAgentSpeakingSub = null;
+    _convErrorSub = null;
+    await _conversationService?.stop();
+    _conversationService = null;
+  }
+
   void reset() {
+    _stopConversation();
     _timer?.cancel();
     _transcriptionTimer?.cancel();
     _audioStreamSub?.cancel();
@@ -969,6 +1107,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   @override
   void dispose() {
+    _stopConversation();
+    _conversationService?.dispose();
     _timer?.cancel();
     _transcriptionTimer?.cancel();
     _audioStreamSub?.cancel();

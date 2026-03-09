@@ -174,7 +174,15 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                     ? ref
                           .watch(sessionEventsProvider(sessionId))
                           .when(
-                            data: (events) => EventFeed(events: events),
+                            data: (events) => EventFeed(
+                              events: events,
+                              onEditEvent: (event, fields) => ref
+                                  .read(sessionRepositoryProvider)
+                                  .updateAiEvent(event.id, fields),
+                              onDeleteEvent: (event) => ref
+                                  .read(sessionRepositoryProvider)
+                                  .deleteAiEvent(event.id),
+                            ),
                             loading: () => const Center(
                               child: CircularProgressIndicator(
                                 color: AppColors.passive,

@@ -15,7 +15,6 @@ final summaryRemoteDatasourceProvider = Provider<SummaryRemoteDatasource>((
 final summaryRepositoryProvider = Provider<SummaryRepository>((ref) {
   return SummaryRepository(
     remoteDatasource: ref.watch(summaryRemoteDatasourceProvider),
-    apiClient: ref.watch(apiClientProvider),
   );
 });
 
@@ -33,7 +32,10 @@ final summaryProvider = FutureProvider.family<SessionSummaryModel?, String>((
 
   // Generate new summary
   final result = await repo.generateAndFetchSummary(sessionId);
-  return result.dataOrNull;
+  return result.when(
+    success: (data) => data,
+    failure: (message, _) => throw Exception(message),
+  );
 });
 
 final summaryActivityProvider = FutureProvider.family<ActivityModel?, String>((

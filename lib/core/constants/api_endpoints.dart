@@ -4,8 +4,9 @@ abstract final class ApiEndpoints {
   static const chat = '/chat';
   static const analyzeImage = '/analyzeImage';
   static const generateSummary = '/generateSummary';
-  static const deepgramProxy = '/deepgramProxy';
-  static const elevenLabsTts = '/elevenLabsTts';
+  static const whisperProxy = '/whisperProxy';
+  static const openaiTts = '/openaiTts';
+  static const getSignedConversationUrl = '/getSignedConversationUrl';
 
   // Supabase Tables
   static const profilesTable = 'profiles';

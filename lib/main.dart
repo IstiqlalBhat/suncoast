@@ -48,6 +48,12 @@ Future<void> main() async {
       url: AppConfig.supabaseUrl,
       anonKey: AppConfig.supabaseAnonKey,
     );
+    try {
+      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+      logger.i('Cleared restored session at launch');
+    } catch (e) {
+      logger.w('Failed to clear restored session at launch: $e');
+    }
     logger.i('Supabase initialized successfully');
   } catch (e) {
     logger.e('Supabase initialization failed: $e');

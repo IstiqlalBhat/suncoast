@@ -57,6 +57,15 @@ class SessionRepository {
     }
   }
 
+  Future<Result<void>> deleteSession(String sessionId) async {
+    try {
+      await _remoteDatasource.deleteSession(sessionId);
+      return const Result.success(null);
+    } catch (e) {
+      return Result.failure('Failed to delete session: $e');
+    }
+  }
+
   Future<Result<void>> updateTranscript(
     String sessionId,
     String transcript,
@@ -71,6 +80,27 @@ class SessionRepository {
 
   Stream<List<AiEventModel>> subscribeToEvents(String sessionId) {
     return _remoteDatasource.subscribeToEvents(sessionId);
+  }
+
+  Future<Result<AiEventModel>> updateAiEvent(
+    String eventId,
+    Map<String, dynamic> fields,
+  ) async {
+    try {
+      final event = await _remoteDatasource.updateAiEvent(eventId, fields);
+      return Result.success(event);
+    } catch (e) {
+      return Result.failure('Failed to update AI event: $e');
+    }
+  }
+
+  Future<Result<void>> deleteAiEvent(String eventId) async {
+    try {
+      await _remoteDatasource.deleteAiEvent(eventId);
+      return const Result.success(null);
+    } catch (e) {
+      return Result.failure('Failed to delete AI event: $e');
+    }
   }
 
   Future<Result<List<AiEventModel>>> getSessionEvents(String sessionId) async {

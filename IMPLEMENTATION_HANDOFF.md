@@ -10,7 +10,7 @@ The product direction established during the conversation is:
 - The app uses `Flutter` for client UX
 - `Supabase` is the system of record for auth, relational data, realtime, and storage
 - `Firebase Functions` is the orchestration layer for AI and external integrations
-- `Deepgram` handles transcription
+- `OpenAI Whisper` handles transcription through a Firebase proxy
 - `Gemini` is the chosen AI provider for chat, transcript processing, vision, and summaries
 
 ## Conversation Timeline
@@ -25,7 +25,7 @@ Initial findings:
   - Flutter mobile screens
   - Supabase auth/data integration
   - Firebase Functions
-  - Deepgram proxying
+  - Whisper proxying
   - Gemini AI callables
 - The app was not fully wired end-to-end
 - Several AI surfaces were still mock or partially connected
@@ -56,7 +56,7 @@ Key architectural direction agreed:
 - Keep `Gemini`
 - Keep `Supabase`
 - Keep `Firebase Functions`
-- Keep `Deepgram`
+- Keep the `Whisper` transcription path
 - Make the app production-ready rather than only visually complete
 
 ### 3. Phase Plan And Blocks
@@ -167,7 +167,7 @@ Updated:
 - `firebase/functions/src/ai/vision.ts`
 - `firebase/functions/src/ai/summary.ts`
 - `firebase/functions/src/integrations/elevenlabs-tts.ts`
-- `firebase/functions/src/transcription/deepgram-proxy.ts`
+- `firebase/functions/src/transcription/whisper-proxy.ts`
 
 #### Model Updates
 

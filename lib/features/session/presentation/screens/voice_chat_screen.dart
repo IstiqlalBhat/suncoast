@@ -38,19 +38,33 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
     final sessionState = ref.watch(activeSessionProvider);
     final timerText = ref.watch(sessionTimerProvider);
     final sessionId = sessionState.session?.id;
+    final isConversation = sessionState.isConversationActive;
     final isHolding =
         sessionState.conversationState == SessionConversationState.userSpeaking;
     final isAiSpeaking =
         sessionState.conversationState == SessionConversationState.aiSpeaking;
     final isProcessing =
         sessionState.conversationState == SessionConversationState.processing;
-    final waveformColor = isHolding ? AppColors.passive : AppColors.chat;
-    final statusText = switch (sessionState.conversationState) {
-      SessionConversationState.userSpeaking => 'Listening...',
-      SessionConversationState.processing => 'Thinking...',
-      SessionConversationState.aiSpeaking => 'AI responding...',
-      SessionConversationState.idle => AppStrings.holdToTalk,
-    };
+    final isMuted = sessionState.isMuted;
+
+    // Waveform color and status adapt to conversation vs push-to-talk mode
+    final waveformColor = isConversation
+        ? (isAiSpeaking ? AppColors.chat : AppColors.passive)
+        : (isHolding ? AppColors.passive : AppColors.chat);
+
+    final statusText = isConversation
+        ? (isAiSpeaking
+            ? 'AI responding...'
+            : isMuted
+                ? 'Muted'
+                : 'Listening...')
+        : switch (sessionState.conversationState) {
+            SessionConversationState.userSpeaking => 'Listening...',
+            SessionConversationState.processing => 'Thinking...',
+            SessionConversationState.aiSpeaking => 'AI responding...',
+            SessionConversationState.idle => AppStrings.holdToTalk,
+          };
+
     final referenceCards = sessionState.referenceCards;
 
     return Scaffold(
@@ -88,7 +102,9 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                 ),
                 child: WaveformVisualizer(
                   color: waveformColor,
-                  isActive: isHolding || isAiSpeaking || isProcessing,
+                  isActive: isConversation
+                      ? (!isMuted || isAiSpeaking)
+                      : (isHolding || isAiSpeaking || isProcessing),
                   amplitude: sessionState.audioLevel,
                 ),
               ),
@@ -125,7 +141,8 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                   margin: const EdgeInsets.symmetric(
                     horizontal: AppDimensions.paddingM,
                   ),
-                  padding: const EdgeInsets.all(AppDimensions.paddingM),
+                  constraints: const BoxConstraints(maxHeight: 80),
+                  padding: const EdgeInsets.all(AppDimensions.paddingS),
                   decoration: BoxDecoration(
                     color: AppColors.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(AppDimensions.radiusM),
@@ -146,6 +163,8 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                           sessionState.error!,
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: AppColors.textPrimary),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -211,7 +230,15 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                     ? ref
                           .watch(sessionEventsProvider(sessionId))
                           .when(
-                            data: (events) => EventFeed(events: events),
+                            data: (events) => EventFeed(
+                              events: events,
+                              onEditEvent: (event, fields) => ref
+                                  .read(sessionRepositoryProvider)
+                                  .updateAiEvent(event.id, fields),
+                              onDeleteEvent: (event) => ref
+                                  .read(sessionRepositoryProvider)
+                                  .deleteAiEvent(event.id),
+                            ),
                             loading: () => const Center(
                               child: CircularProgressIndicator(
                                 color: AppColors.chat,
@@ -227,54 +254,83 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                     : const EventFeed(events: []),
               ),
 
-              // Bottom controls
+              // Bottom controls — conversation mode vs push-to-talk fallback
               Padding(
                 padding: const EdgeInsets.all(AppDimensions.paddingL),
                 child: Column(
                   children: [
-                    // Hold-to-talk button
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTapDown: (_) {
-                        ref
+                    if (isConversation)
+                      // Always-listening mode: mute/unmute toggle
+                      GestureDetector(
+                        onTap: () => ref
                             .read(activeSessionProvider.notifier)
-                            .startInteractiveTurn();
-                      },
-                      onTapUp: (_) {
-                        ref
-                            .read(activeSessionProvider.notifier)
-                            .finishInteractiveTurn();
-                      },
-                      onTapCancel: () {
-                        ref
-                            .read(activeSessionProvider.notifier)
-                            .finishInteractiveTurn();
-                      },
-                      child: Container(
-                        width: 88,
-                        height: 88,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: isHolding
-                              ? AppGradients.chatGradient
-                              : null,
-                          color: isHolding
-                              ? null
-                              : AppColors.chat.withValues(alpha: 0.15),
-                          border: Border.all(
-                            color: AppColors.chat.withValues(
-                              alpha: isHolding ? 0.8 : 0.3,
+                            .toggleMute(),
+                        child: Container(
+                          width: 88,
+                          height: 88,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: isMuted ? null : AppGradients.chatGradient,
+                            color: isMuted
+                                ? AppColors.error.withValues(alpha: 0.15)
+                                : null,
+                            border: Border.all(
+                              color: isMuted
+                                  ? AppColors.error.withValues(alpha: 0.5)
+                                  : AppColors.chat.withValues(alpha: 0.8),
+                              width: 2,
                             ),
-                            width: 2,
+                          ),
+                          child: Icon(
+                            isMuted ? Icons.mic_off : Icons.mic,
+                            color: isMuted ? AppColors.error : Colors.white,
+                            size: 40,
                           ),
                         ),
-                        child: Icon(
-                          isHolding ? Icons.mic : Icons.mic_none,
-                          color: isHolding ? Colors.white : AppColors.chat,
-                          size: 40,
+                      )
+                    else
+                      // Push-to-talk fallback
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTapDown: (_) {
+                          ref
+                              .read(activeSessionProvider.notifier)
+                              .startInteractiveTurn();
+                        },
+                        onTapUp: (_) {
+                          ref
+                              .read(activeSessionProvider.notifier)
+                              .finishInteractiveTurn();
+                        },
+                        onTapCancel: () {
+                          ref
+                              .read(activeSessionProvider.notifier)
+                              .finishInteractiveTurn();
+                        },
+                        child: Container(
+                          width: 88,
+                          height: 88,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient:
+                                isHolding ? AppGradients.chatGradient : null,
+                            color: isHolding
+                                ? null
+                                : AppColors.chat.withValues(alpha: 0.15),
+                            border: Border.all(
+                              color: AppColors.chat.withValues(
+                                alpha: isHolding ? 0.8 : 0.3,
+                              ),
+                              width: 2,
+                            ),
+                          ),
+                          child: Icon(
+                            isHolding ? Icons.mic : Icons.mic_none,
+                            color: isHolding ? Colors.white : AppColors.chat,
+                            size: 40,
+                          ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: AppDimensions.paddingM),
                     // End session
                     TextButton.icon(

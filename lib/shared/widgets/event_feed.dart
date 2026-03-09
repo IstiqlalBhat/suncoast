@@ -7,8 +7,17 @@ import 'event_feed_row.dart';
 class EventFeed extends StatefulWidget {
   final List<AiEventModel> events;
   final ScrollController? scrollController;
+  final Future<void> Function(AiEventModel event, Map<String, dynamic> fields)?
+      onEditEvent;
+  final Future<void> Function(AiEventModel event)? onDeleteEvent;
 
-  const EventFeed({super.key, required this.events, this.scrollController});
+  const EventFeed({
+    super.key,
+    required this.events,
+    this.scrollController,
+    this.onEditEvent,
+    this.onDeleteEvent,
+  });
 
   @override
   State<EventFeed> createState() => _EventFeedState();
@@ -49,6 +58,30 @@ class _EventFeedState extends State<EventFeed> {
     super.dispose();
   }
 
+  Future<bool?> _confirmDelete(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.card,
+        title: const Text('Delete Event'),
+        content: const Text(
+          'This will permanently delete this event.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.events.isEmpty) {
@@ -83,8 +116,115 @@ class _EventFeedState extends State<EventFeed> {
       separatorBuilder: (context, index) =>
           const SizedBox(height: AppDimensions.paddingS),
       itemBuilder: (context, index) {
-        return EventFeedRow(event: widget.events[index]);
+        final event = widget.events[index];
+        Widget row = EventFeedRow(
+          event: event,
+          onTap: widget.onEditEvent != null
+              ? () => _showEditDialog(event)
+              : null,
+        );
+
+        if (widget.onDeleteEvent != null) {
+          row = Dismissible(
+            key: ValueKey(event.id),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: AppDimensions.paddingL),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+              ),
+              child: const Icon(Icons.delete_outline, color: AppColors.error),
+            ),
+            confirmDismiss: (_) => _confirmDelete(context),
+            onDismissed: (_) => widget.onDeleteEvent!(event),
+            child: row,
+          );
+        }
+
+        return row;
       },
     );
+  }
+
+  void _showEditDialog(AiEventModel event) {
+    final contentController = TextEditingController(text: event.content);
+    String? selectedStatus =
+        event.type == AiEventType.action ? event.status.name : null;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.card,
+          title: const Text('Edit Event'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: contentController,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Content',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (event.type == AiEventType.action) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedStatus,
+                  decoration: const InputDecoration(
+                    labelText: 'Status',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'pending',
+                      child: Text('Pending'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'completed',
+                      child: Text('Completed'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'skipped',
+                      child: Text('Skipped'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'failed',
+                      child: Text('Failed'),
+                    ),
+                  ],
+                  onChanged: (value) =>
+                      setDialogState(() => selectedStatus = value),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final fields = <String, dynamic>{
+                  'content': contentController.text,
+                };
+                if (selectedStatus != null) {
+                  fields['status'] = selectedStatus;
+                }
+                widget.onEditEvent!(event, fields);
+                Navigator.pop(context);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Dispose controller when dialog closes
+    contentController.dispose;
   }
 }

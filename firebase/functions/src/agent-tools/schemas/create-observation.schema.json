@@ -1,0 +1,83 @@
+{
+  "type": "webhook",
+  "name": "create_observation",
+  "description": "Record a field observation that the user noticed or saw. Use this when the user describes something they observed, spotted, or noticed in the field.",
+  "api_schema": {
+    "url": "https://us-central1-alchemy-4bc7c.cloudfunctions.net/agentCreateObservation",
+    "method": "POST",
+    "path_params_schema": [],
+    "query_params_schema": [],
+    "request_body_schema": {
+      "id": "body",
+      "type": "object",
+      "description": "Observation data from the field",
+      "properties": [
+        {
+          "id": "description",
+          "type": "string",
+          "value_type": "llm_prompt",
+          "description": "What the user observed, in clear detail",
+          "dynamic_variable": "",
+          "constant_value": "",
+          "enum": null,
+          "is_system_provided": false,
+          "required": true
+        },
+        {
+          "id": "severity",
+          "type": "string",
+          "value_type": "llm_prompt",
+          "description": "How severe or important this observation is. Use one of: low, medium, high, critical",
+          "dynamic_variable": "",
+          "constant_value": "",
+          "enum": null,
+          "is_system_provided": false,
+          "required": false
+        },
+        {
+          "id": "category",
+          "type": "string",
+          "value_type": "llm_prompt",
+          "description": "Category of the observation. Use one of: safety, maintenance, quality, environmental, general",
+          "dynamic_variable": "",
+          "constant_value": "",
+          "enum": null,
+          "is_system_provided": false,
+          "required": false
+        },
+        {
+          "id": "session_id",
+          "type": "string",
+          "value_type": "llm_prompt",
+          "description": "The current FieldFlow session ID. Use the session_id from the conversation context.",
+          "dynamic_variable": "",
+          "constant_value": "",
+          "enum": null,
+          "is_system_provided": false,
+          "required": true
+        }
+      ],
+      "required": false,
+      "value_type": "llm_prompt"
+    },
+    "request_headers": [
+      {
+        "type": "value",
+        "name": "Content-Type",
+        "value": "application/json"
+      }
+    ],
+    "auth_connection": null
+  },
+  "response_timeout_secs": 20,
+  "dynamic_variables": {
+    "dynamic_variable_placeholders": {}
+  },
+  "assignments": [],
+  "disable_interruptions": false,
+  "force_pre_tool_speech": "auto",
+  "tool_call_sound": null,
+  "tool_call_sound_behavior": "auto",
+  "execution_mode": "immediate",
+  "tool_error_handling_mode": "auto"
+}

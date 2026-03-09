@@ -1,6 +1,16 @@
 # FieldFlow
 
-Voice-first mobile AI agent for field workers using Flutter, Supabase, Firebase Functions, Deepgram, and Gemini.
+Voice-first mobile AI agent for field workers using Flutter, Supabase, Firebase Functions, OpenAI Whisper, and Gemini.
+
+## Web App
+
+A separate Next.js frontend now lives in `web-app/`.
+
+- Setup: `cd web-app && cp .env.example .env.local`
+- Dev server: `cd web-app && npm run dev`
+- Verification: `cd web-app && npm run lint && npm run typecheck && npm run test:run && npm run build`
+
+The web app reuses the existing Supabase project and Firebase Functions deployment. No additional backend copy is required.
 
 ## App Setup
 
@@ -23,8 +33,9 @@ Required function secrets:
 - `GEMINI_API_KEY`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_KEY`
-- `DEEPGRAM_API_KEY`
+- `OPENAI_API_KEY`
 - `ELEVENLABS_API_KEY` for premium TTS only
+- `ELEVENLABS_AGENT_ID` for conversational voice
 
 ## Supabase Notes
 

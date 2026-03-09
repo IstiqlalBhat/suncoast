@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/models/user_settings_model.dart';
 import '../../../../shared/providers/app_providers.dart';
 import '../../../../shared/providers/auth_providers.dart';
+import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../data/datasources/settings_remote_datasource.dart';
 import '../../data/repositories/settings_repository.dart';
 
@@ -25,58 +26,93 @@ class SettingsNotifier extends AsyncNotifier<UserSettingsModel> {
   Future<UserSettingsModel> build() async {
     final userId = ref.read(currentUserProvider)?.id ?? '';
     final repo = ref.read(settingsRepositoryProvider);
+    final secureStorage = ref.read(secureStorageServiceProvider);
+    final faceIdEnabled = await secureStorage.isBiometricEnabled();
     final result = await repo.getSettings(userId);
     return result.when(
-      success: (data) => data,
+      success: (data) => data.copyWith(faceIdEnabled: faceIdEnabled),
       failure: (message, _) => throw Exception(message),
     );
   }
 
-  Future<void> updateFaceId(bool enabled) async {
+  Future<String?> updateFaceId(bool enabled) async {
     final current = state.valueOrNull;
-    if (current == null) return;
-    await _save(current.copyWith(faceIdEnabled: enabled));
+    if (current == null) return 'Settings not loaded yet';
+
+    final loginNotifier = ref.read(loginProvider.notifier);
+    final secureStorage = ref.read(secureStorageServiceProvider);
+
+    if (enabled) {
+      final setupResult = await loginNotifier.enableBiometricLogin();
+      final setupError = setupResult.when(
+        success: (_) => null,
+        failure: (message, _) => message,
+      );
+      if (setupError != null) return setupError;
+
+      final saveError = await _save(current.copyWith(faceIdEnabled: true));
+      if (saveError != null) {
+        await secureStorage.setBiometricEnabled(false);
+      }
+      return saveError;
+    }
+
+    await secureStorage.setBiometricEnabled(false);
+    final saveError = await _save(current.copyWith(faceIdEnabled: false));
+    if (saveError != null) {
+      await secureStorage.setBiometricEnabled(true);
+      return saveError;
+    }
+
+    await secureStorage.clearSavedPassword();
+    return null;
   }
 
-  Future<void> updateVoiceOutput(bool enabled) async {
+  Future<String?> updateVoiceOutput(bool enabled) async {
     final current = state.valueOrNull;
-    if (current == null) return;
-    await _save(current.copyWith(voiceOutputEnabled: enabled));
+    if (current == null) return 'Settings not loaded yet';
+    return _save(current.copyWith(voiceOutputEnabled: enabled));
   }
 
-  Future<void> updatePremiumTts(bool enabled) async {
+  Future<String?> updatePremiumTts(bool enabled) async {
     final current = state.valueOrNull;
-    if (current == null) return;
-    await _save(current.copyWith(usePremiumTts: enabled));
+    if (current == null) return 'Settings not loaded yet';
+    return _save(current.copyWith(usePremiumTts: enabled));
   }
 
-  Future<void> updateVoiceSpeed(double speed) async {
+  Future<String?> updateVoiceSpeed(double speed) async {
     final current = state.valueOrNull;
-    if (current == null) return;
-    await _save(current.copyWith(voiceSpeed: speed));
+    if (current == null) return 'Settings not loaded yet';
+    return _save(current.copyWith(voiceSpeed: speed));
   }
 
-  Future<void> updateConfirmationMode(ConfirmationMode mode) async {
+  Future<String?> updateConfirmationMode(ConfirmationMode mode) async {
     final current = state.valueOrNull;
-    if (current == null) return;
-    await _save(current.copyWith(confirmationMode: mode));
+    if (current == null) return 'Settings not loaded yet';
+    return _save(current.copyWith(confirmationMode: mode));
   }
 
-  Future<void> updateLanguage(String language) async {
+  Future<String?> updateLanguage(String language) async {
     final current = state.valueOrNull;
-    if (current == null) return;
-    await _save(current.copyWith(language: language));
+    if (current == null) return 'Settings not loaded yet';
+    return _save(current.copyWith(language: language));
   }
 
-  Future<void> _save(UserSettingsModel settings) async {
+  Future<String?> _save(UserSettingsModel settings) async {
+    final previous = state.valueOrNull;
     state = AsyncValue.data(settings);
     final repo = ref.read(settingsRepositoryProvider);
     final result = await repo.saveSettings(settings);
-    result.when(
-      success: (saved) => state = AsyncValue.data(saved),
+    return result.when(
+      success: (saved) {
+        state = AsyncValue.data(saved);
+        return null;
+      },
       failure: (message, _) {
-        // Revert on error
-        state = AsyncValue.error(Exception(message), StackTrace.current);
+        if (previous != null) {
+          state = AsyncValue.data(previous);
+        }
+        return message;
       },
     );
   }

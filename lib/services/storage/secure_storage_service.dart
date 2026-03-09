@@ -43,6 +43,12 @@ class SecureStorageService {
 
   Future<String?> getPassword() => _storage.read(key: _passwordKey);
 
+  Future<bool> hasSavedCredentials() async {
+    final email = await getEmail();
+    final password = await getPassword();
+    return email != null && password != null;
+  }
+
   Future<void> setBiometricEnabled(bool enabled) async {
     await _storage.write(key: _biometricEnabledKey, value: enabled.toString());
   }
@@ -50,6 +56,15 @@ class SecureStorageService {
   Future<bool> isBiometricEnabled() async {
     final value = await _storage.read(key: _biometricEnabledKey);
     return value == 'true';
+  }
+
+  Future<void> clearSavedPassword() => _storage.delete(key: _passwordKey);
+
+  Future<void> clearBiometricLoginData() async {
+    await Future.wait([
+      clearSavedPassword(),
+      _storage.delete(key: _biometricEnabledKey),
+    ]);
   }
 
   Future<void> clearAll() => _storage.deleteAll();
