@@ -40,15 +40,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         context.go('/dashboard');
       }
       if (state.error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(state.error!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(state.error!)));
       }
     });
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(gradient: AppGradients.backgroundGradient),
+        decoration: const BoxDecoration(
+          gradient: AppGradients.backgroundGradient,
+        ),
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -60,7 +62,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // Logo / Title
-                    Icon(
+                    const Icon(
                       Icons.mic_rounded,
                       size: 64,
                       color: AppColors.primary,
@@ -126,7 +128,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 : Icons.visibility,
                           ),
                           onPressed: () {
-                            setState(() => _obscurePassword = !_obscurePassword);
+                            setState(
+                              () => _obscurePassword = !_obscurePassword,
+                            );
                           },
                         ),
                       ),
@@ -158,8 +162,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         onPressed: loginState.isLoading
                             ? null
                             : () => ref
-                                .read(loginProvider.notifier)
-                                .signInWithBiometrics(),
+                                  .read(loginProvider.notifier)
+                                  .signInWithBiometrics(),
                         icon: const Icon(Icons.face),
                         label: const Text(AppStrings.faceIdLogin),
                       ),

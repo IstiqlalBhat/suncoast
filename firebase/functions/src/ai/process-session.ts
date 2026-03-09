@@ -9,6 +9,16 @@ const geminiKey = defineSecret("GEMINI_API_KEY");
 const supabaseUrl = defineSecret("SUPABASE_URL");
 const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
 
+type TranscriptEvent = {
+  type?: string;
+  content?: string;
+  confidence?: number;
+};
+
+type ProcessTranscriptResponse = {
+  events?: TranscriptEvent[];
+};
+
 export const processTranscript = onCall(
   { secrets: [geminiKey, supabaseUrl, supabaseServiceKey] },
   async (request) => {
@@ -50,17 +60,17 @@ Respond with ONLY valid JSON: { "events": [...] }`;
       const result = await model.generateContent(prompt);
       const text = result.response.text();
 
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonMatch = text.match(/\{[\s\S]*?\}(?=[^}]*$)/s) || text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("Failed to parse AI response");
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      const events = parsed.events || [];
+      const parsed = JSON.parse(jsonMatch[0]) as ProcessTranscriptResponse;
+      const events = Array.isArray(parsed.events) ? parsed.events : [];
 
       // Insert events into Supabase
       if (events.length > 0 && sessionId) {
-        const eventsToInsert = events.map((event: any) => ({
+        const eventsToInsert = events.map((event) => ({
           session_id: sessionId,
           type: event.type,
           content: event.content,
@@ -68,7 +78,10 @@ Respond with ONLY valid JSON: { "events": [...] }`;
           metadata: {},
         }));
 
-        await supabase.from("ai_events").insert(eventsToInsert);
+        const { error: insertError } = await supabase.from("ai_events").insert(eventsToInsert);
+        if (insertError) {
+          logger.error("Failed to insert transcript events", { error: insertError.message });
+        }
       }
 
       return { events };

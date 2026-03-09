@@ -9,6 +9,42 @@ const geminiKey = defineSecret("GEMINI_API_KEY");
 const supabaseUrl = defineSecret("SUPABASE_URL");
 const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
 
+type EventRecord = {
+  type?: string;
+  status?: string | null;
+  content?: string;
+  external_record_url?: string | null;
+  action_label?: string | null;
+};
+
+type AttachmentRecord = {
+  type?: string;
+  storage_path?: string;
+  ai_analysis?: string | null;
+};
+
+type SummaryActionStatus = {
+  label?: string;
+  description?: string;
+  status?: string;
+  external_label?: string | null;
+  external_url?: string | null;
+};
+
+type SummaryExternalRecord = {
+  label?: string;
+  url?: string | null;
+};
+
+type SummaryResponse = {
+  observation_summary?: string;
+  key_observations?: string[];
+  actions_taken?: string[];
+  action_statuses?: SummaryActionStatus[];
+  follow_ups?: unknown[];
+  external_records?: SummaryExternalRecord[];
+};
+
 export const generateSummary = onCall(
   { secrets: [geminiKey, supabaseUrl, supabaseServiceKey] },
   async (request) => {
@@ -44,8 +80,8 @@ export const generateSummary = onCall(
       }
 
       const session = sessionResult.data;
-      const events = eventsResult.data || [];
-      const attachments = attachmentsResult.data || [];
+      const events = (eventsResult.data || []) as EventRecord[];
+      const attachments = (attachmentsResult.data || []) as AttachmentRecord[];
 
       // Calculate duration
       const startedAt = new Date(session.started_at);
@@ -64,18 +100,21 @@ export const generateSummary = onCall(
         .eq("id", session.activity_id)
         .maybeSingle();
 
+      if (activityResult.error) {
+        logger.warn("Failed to fetch activity for summary", { error: activityResult.error.message });
+      }
       const activity = activityResult.data;
       const eventsText = events
-        .map((e: any) =>
-          `[${e.type}|${e.status ?? "completed"}] ${e.content}${
-            e.external_record_url ? ` (external: ${e.external_record_url})` : ""
+        .map((event) =>
+          `[${event.type}|${event.status ?? "completed"}] ${event.content}${
+            event.external_record_url ? ` (external: ${event.external_record_url})` : ""
           }`
         )
         .join("\n");
       const attachmentsText = attachments
-        .map((a: any) =>
-          `[${a.type}] ${a.storage_path}${
-            a.ai_analysis ? ` | analysis: ${a.ai_analysis}` : ""
+        .map((attachment) =>
+          `[${attachment.type}] ${attachment.storage_path}${
+            attachment.ai_analysis ? ` | analysis: ${attachment.ai_analysis}` : ""
           }`
         )
         .join("\n");
@@ -123,9 +162,9 @@ Return valid JSON only. Keep dates in ISO-8601 or null.`;
       const result = await model.generateContent(prompt);
       const text = result.response.text();
 
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      const parsed = jsonMatch ?
-        JSON.parse(jsonMatch[0]) :
+      const jsonMatch = text.match(/\{[\s\S]*?\}(?=[^}]*$)/s) || text.match(/\{[\s\S]*\}/);
+      const parsed: SummaryResponse = jsonMatch ?
+        JSON.parse(jsonMatch[0]) as SummaryResponse :
         buildFallbackSummary(events, durationSeconds);
 
       // Insert summary into Supabase
@@ -164,16 +203,22 @@ Return valid JSON only. Keep dates in ISO-8601 or null.`;
   }
 );
 
-function buildFallbackSummary(events: any[], durationSeconds: number) {
+function buildFallbackSummary(
+  events: EventRecord[],
+  durationSeconds: number
+): SummaryResponse {
   const observations = events
     .filter((event) => event.type === "observation")
-    .map((event) => event.content);
+    .map((event) => event.content)
+    .filter((content): content is string => Boolean(content));
   const actions = events
     .filter((event) => event.type === "action")
-    .map((event) => event.content);
+    .map((event) => event.content)
+    .filter((content): content is string => Boolean(content));
   const lookups = events
     .filter((event) => event.type === "lookup")
-    .map((event) => event.content);
+    .map((event) => event.content)
+    .filter((content): content is string => Boolean(content));
 
   const overviewParts = [
     `Session duration: ${durationSeconds} seconds.`,
@@ -204,8 +249,8 @@ function buildFallbackSummary(events: any[], durationSeconds: number) {
 }
 
 function normalizeActionStatuses(
-  actionStatuses: any,
-  events: any[]
+  actionStatuses: SummaryActionStatus[] | undefined,
+  events: EventRecord[]
 ) {
   if (Array.isArray(actionStatuses) && actionStatuses.length > 0) {
     return actionStatuses.map((item) => ({
@@ -227,8 +272,8 @@ function normalizeActionStatuses(
 }
 
 function normalizeExternalRecords(
-  externalRecords: any,
-  events: any[]
+  externalRecords: SummaryExternalRecord[] | undefined,
+  events: EventRecord[]
 ) {
   if (Array.isArray(externalRecords) && externalRecords.length > 0) {
     return externalRecords.map((item) => ({

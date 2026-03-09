@@ -1,7 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:logger/logger.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../core/network/api_client.dart';
 import '../../core/constants/api_endpoints.dart';
 
@@ -23,6 +26,7 @@ class AudioPlaybackService {
     await _flutterTts.setSpeechRate(0.5);
     await _flutterTts.setVolume(1.0);
     await _flutterTts.setPitch(1.0);
+    await _flutterTts.awaitSpeakCompletion(true);
   }
 
   void setEngine(TtsEngine engine) {
@@ -57,7 +61,7 @@ class AudioPlaybackService {
     }
 
     try {
-      final response = await _apiClient!.callFunction(
+      final response = await _apiClient.callFunction(
         ApiEndpoints.elevenLabsTts,
         data: {'text': text},
       );
@@ -68,14 +72,16 @@ class AudioPlaybackService {
       }
 
       // Decode and play audio
-      final audioBytes = Uint8List.fromList(
-        audioBase64.codeUnits, // In practice, use base64Decode
-      );
-
-      await _audioPlayer.setAudioSource(
-        _BytesAudioSource(audioBytes),
-      );
+      final audioBytes = Uint8List.fromList(base64Decode(audioBase64));
+      final tempDir = await getTemporaryDirectory();
+      final audioFile = File('${tempDir.path}/fieldflow_tts.mp3');
+      await audioFile.writeAsBytes(audioBytes, flush: true);
+      await _audioPlayer.setFilePath(audioFile.path);
       await _audioPlayer.play();
+      // Clean up temp file after playback
+      try {
+        await audioFile.delete();
+      } catch (_) {}
     } catch (e) {
       _logger.e('ElevenLabs TTS failed: $e');
       rethrow;
@@ -90,24 +96,5 @@ class AudioPlaybackService {
   Future<void> dispose() async {
     await _flutterTts.stop();
     await _audioPlayer.dispose();
-  }
-}
-
-class _BytesAudioSource extends StreamAudioSource {
-  final Uint8List _bytes;
-
-  _BytesAudioSource(this._bytes);
-
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    start ??= 0;
-    end ??= _bytes.length;
-    return StreamAudioResponse(
-      sourceLength: _bytes.length,
-      contentLength: end - start,
-      offset: start,
-      stream: Stream.value(_bytes.sublist(start, end)),
-      contentType: 'audio/mpeg',
-    );
   }
 }

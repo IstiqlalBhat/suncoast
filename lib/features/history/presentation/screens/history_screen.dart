@@ -14,10 +14,7 @@ class HistoryScreen extends ConsumerWidget {
     final sessionsAsync = ref.watch(sessionHistoryProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Session History'),
-        centerTitle: false,
-      ),
+      appBar: AppBar(title: const Text('Session History'), centerTitle: false),
       body: sessionsAsync.when(
         data: (sessions) {
           if (sessions.isEmpty) {
@@ -63,7 +60,9 @@ class HistoryScreen extends ConsumerWidget {
                   session: session,
                   onTap: () {
                     if (session['activity_id'] != null) {
-                      context.push('/session/${session['activity_id']}/summary');
+                      context.push(
+                        '/session/${session['activity_id']}/summary',
+                      );
                     }
                   },
                 );
@@ -98,10 +97,7 @@ class _SessionHistoryCard extends StatelessWidget {
   final Map<String, dynamic> session;
   final VoidCallback onTap;
 
-  const _SessionHistoryCard({
-    required this.session,
-    required this.onTap,
-  });
+  const _SessionHistoryCard({required this.session, required this.onTap});
 
   Color get _modeColor {
     final mode = session['mode'] as String? ?? '';
@@ -221,14 +217,16 @@ class _SessionHistoryCard extends StatelessWidget {
                         ),
                         if (duration.isNotEmpty) ...[
                           const SizedBox(width: 8),
-                          Icon(Icons.timer_outlined,
-                              size: 13, color: AppColors.textTertiary),
+                          const Icon(
+                            Icons.timer_outlined,
+                            size: 13,
+                            color: AppColors.textTertiary,
+                          ),
                           const SizedBox(width: 3),
                           Text(
                             duration,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textTertiary,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: AppColors.textTertiary),
                           ),
                         ],
                       ],
@@ -250,7 +248,7 @@ class _SessionHistoryCard extends StatelessWidget {
                       ),
                     ),
                   const SizedBox(height: 4),
-                  Icon(
+                  const Icon(
                     Icons.chevron_right,
                     color: AppColors.textTertiary,
                     size: 18,

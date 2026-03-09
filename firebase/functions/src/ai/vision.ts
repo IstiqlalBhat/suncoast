@@ -14,7 +14,7 @@ export const analyzeImage = onCall(
   async (request) => {
     const genAI = new GoogleGenerativeAI(geminiKey.value());
     const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
-    const { image, context, sessionId } = request.data;
+    const { image, context, sessionId, attachmentId, mimeType } = request.data;
 
     if (!image) {
       throw new HttpsError("invalid-argument", "Image is required");
@@ -45,29 +45,49 @@ Provide your analysis as JSON:
       const imagePart = {
         inlineData: {
           data: image,
-          mimeType: "image/jpeg",
+          mimeType: mimeType || "image/jpeg",
         },
       };
 
       const result = await model.generateContent([prompt, imagePart]);
       const text = result.response.text();
 
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonMatch = text.match(/\{[\s\S]*?\}(?=[^}]*$)/s) || text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         throw new Error("Failed to parse vision response");
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
 
+      if (attachmentId) {
+        const { error: updateError } = await supabase
+          .from("media_attachments")
+          .update({
+            ai_analysis: parsed.analysis || "",
+            analysis_status: "completed",
+          })
+          .eq("id", attachmentId);
+        if (updateError) {
+          logger.error("Failed to update attachment analysis", { error: updateError.message });
+        }
+      }
+
       // Insert event into Supabase
       if (parsed.event && sessionId) {
-        await supabase.from("ai_events").insert({
+        const { error: insertError } = await supabase.from("ai_events").insert({
           session_id: sessionId,
           type: parsed.event.type || "observation",
           content: parsed.event.content,
           confidence: 0.9,
-          metadata: { source: "vision" },
+          source: "ai",
+          metadata: {
+            source: "vision",
+            attachmentId: attachmentId || null,
+          },
         });
+        if (insertError) {
+          logger.error("Failed to insert vision event", { error: insertError.message });
+        }
       }
 
       return {
@@ -75,6 +95,12 @@ Provide your analysis as JSON:
         event: parsed.event || null,
       };
     } catch (error) {
+      if (attachmentId) {
+        await supabase
+          .from("media_attachments")
+          .update({ analysis_status: "failed" })
+          .eq("id", attachmentId);
+      }
       logFunctionError("analyzeImage", error, {
         hasSessionId: Boolean(sessionId),
       });

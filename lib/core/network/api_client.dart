@@ -7,7 +7,7 @@ import '../constants/api_endpoints.dart';
 class ApiClient {
   final SupabaseClient _supabase;
   final Dio _dio;
-  FirebaseFunctions? _functionsOverride;
+  final FirebaseFunctions? _functionsOverride;
 
   ApiClient({
     required SupabaseClient supabase,

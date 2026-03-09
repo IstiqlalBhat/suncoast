@@ -70,7 +70,7 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: AppDimensions.paddingL),
 
             // Security
-            _SectionTitle(title: AppStrings.security),
+            const _SectionTitle(title: AppStrings.security),
             _SettingsTile(
               icon: Icons.face,
               title: AppStrings.enableFaceId,
@@ -83,7 +83,7 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: AppDimensions.paddingM),
 
             // Voice
-            _SectionTitle(title: AppStrings.voiceOutput),
+            const _SectionTitle(title: AppStrings.voiceOutput),
             _SettingsTile(
               icon: Icons.volume_up,
               title: 'Voice Output',
@@ -100,8 +100,9 @@ class SettingsScreen extends ConsumerWidget {
               trailing: Switch(
                 value: settings.usePremiumTts,
                 onChanged: settings.voiceOutputEnabled
-                    ? (v) =>
-                        ref.read(settingsProvider.notifier).updatePremiumTts(v)
+                    ? (v) => ref
+                          .read(settingsProvider.notifier)
+                          .updatePremiumTts(v)
                     : null,
               ),
             ),
@@ -124,22 +125,27 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: AppDimensions.paddingM),
 
             // Confirmation
-            _SectionTitle(title: 'Confirmation Prompts'),
-            ...ConfirmationMode.values.map(
-              (mode) => _SettingsTile(
-                icon: Icons.check_circle_outline,
-                title: mode.name[0].toUpperCase() + mode.name.substring(1),
-                trailing: Radio<ConfirmationMode>(
-                  value: mode,
-                  groupValue: settings.confirmationMode,
-                  onChanged: (v) {
-                    if (v != null) {
-                      ref
-                          .read(settingsProvider.notifier)
-                          .updateConfirmationMode(v);
-                    }
-                  },
-                ),
+            const _SectionTitle(title: 'Confirmation Prompts'),
+            RadioGroup<ConfirmationMode>(
+              groupValue: settings.confirmationMode,
+              onChanged: (mode) {
+                if (mode != null) {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .updateConfirmationMode(mode);
+                }
+              },
+              child: Column(
+                children: ConfirmationMode.values
+                    .map(
+                      (mode) => _SettingsTile(
+                        icon: Icons.check_circle_outline,
+                        title:
+                            mode.name[0].toUpperCase() + mode.name.substring(1),
+                        trailing: Radio<ConfirmationMode>(value: mode),
+                      ),
+                    )
+                    .toList(),
               ),
             ),
             const SizedBox(height: AppDimensions.paddingXL),
@@ -212,9 +218,9 @@ class _SectionTitle extends StatelessWidget {
       ),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: AppColors.primary,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.labelLarge?.copyWith(color: AppColors.primary),
       ),
     );
   }

@@ -9,6 +9,27 @@ const geminiKey = defineSecret("GEMINI_API_KEY");
 const supabaseUrl = defineSecret("SUPABASE_URL");
 const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
 
+type ChatEvent = {
+  type?: string;
+  content?: string;
+  status?: string;
+  actionLabel?: string | null;
+  externalRecordUrl?: string | null;
+};
+
+type ReferenceCard = {
+  type?: string;
+  title?: string;
+  content?: string;
+  subtitle?: string | null;
+};
+
+type ChatResponse = {
+  message?: string;
+  events?: ChatEvent[];
+  referenceCards?: ReferenceCard[];
+};
+
 export const chat = onCall(
   { secrets: [geminiKey, supabaseUrl, supabaseServiceKey] },
   async (request) => {
@@ -39,15 +60,32 @@ Respond conversationally and helpfully. Also extract any events (observations, l
 Respond with JSON:
 {
   "message": "Your spoken response to the user",
-  "events": [{ "type": "observation|lookup|action", "content": "..." }],
-  "referenceCards": [{ "type": "info|contact|task", "title": "...", "content": "..." }]
-}`;
+  "events": [
+    {
+      "type": "observation|lookup|action",
+      "content": "...",
+      "status": "pending|completed|failed",
+      "actionLabel": null,
+      "externalRecordUrl": null
+    }
+  ],
+  "referenceCards": [
+    {
+      "type": "info|contact|task|suggestion",
+      "title": "...",
+      "content": "...",
+      "subtitle": null
+    }
+  ]
+}
+
+Return valid JSON only.`;
 
     try {
       const result = await model.generateContent(prompt);
       const text = result.response.text();
 
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonMatch = text.match(/\{[\s\S]*?\}(?=[^}]*$)/s) || text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
         return {
           message: "I'm sorry, I had trouble processing that. Could you repeat?",
@@ -56,24 +94,32 @@ Respond with JSON:
         };
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]) as ChatResponse;
+
+      const events = Array.isArray(parsed.events) ? parsed.events : [];
 
       // Insert events into Supabase
-      if (parsed.events?.length > 0 && sessionId) {
-        const eventsToInsert = parsed.events.map((event: any) => ({
+      if (events.length > 0 && sessionId) {
+        const eventsToInsert = events.map((event) => ({
           session_id: sessionId,
           type: event.type,
           content: event.content,
+          status: event.status || "completed",
+          action_label: event.actionLabel || null,
+          external_record_url: event.externalRecordUrl || null,
           confidence: 0.85,
           metadata: {},
         }));
 
-        await supabase.from("ai_events").insert(eventsToInsert);
+        const { error: insertError } = await supabase.from("ai_events").insert(eventsToInsert);
+        if (insertError) {
+          logger.error("Failed to insert chat events", { error: insertError.message });
+        }
       }
 
       return {
         message: parsed.message || "",
-        events: parsed.events || [],
+        events,
         referenceCards: parsed.referenceCards || [],
       };
     } catch (error) {

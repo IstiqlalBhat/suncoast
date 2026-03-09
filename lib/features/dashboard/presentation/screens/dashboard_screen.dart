@@ -52,7 +52,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final activitiesAsync = ref.watch(activitiesProvider);
     final selectedFilter = ref.watch(selectedTypeFilterProvider);
     final user = ref.watch(currentUserProvider);
-    final userName = user?.userMetadata?['name'] as String? ??
+    final userName =
+        user?.userMetadata?['name'] as String? ??
         user?.email?.split('@').first ??
         'there';
 
@@ -115,15 +116,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   fillColor: AppColors.surface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.divider),
+                    borderSide: const BorderSide(color: AppColors.divider),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.divider),
+                    borderSide: const BorderSide(color: AppColors.divider),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: AppColors.primary),
+                    borderSide: const BorderSide(color: AppColors.primary),
                   ),
                 ),
                 onChanged: (value) {
@@ -148,7 +149,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     isSelected: selectedFilter == null,
                     color: AppColors.primary,
                     onTap: () {
-                      ref.read(selectedTypeFilterProvider.notifier).state = null;
+                      ref.read(selectedTypeFilterProvider.notifier).state =
+                          null;
                       ref.read(activitiesProvider.notifier).filterByType(null);
                     },
                   ),
@@ -201,35 +203,43 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
             // Stats row
             activitiesAsync.whenOrNull(
-              data: (activities) {
-                final pending = activities.where((a) => a.status == ActivityStatus.pending).length;
-                final inProgress = activities.where((a) => a.status == ActivityStatus.inProgress).length;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  child: Row(
-                    children: [
-                      _StatBadge(
-                        count: activities.length,
-                        label: 'Total',
-                        color: AppColors.primary,
+                  data: (activities) {
+                    final pending = activities
+                        .where((a) => a.status == ActivityStatus.pending)
+                        .length;
+                    final inProgress = activities
+                        .where((a) => a.status == ActivityStatus.inProgress)
+                        .length;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 4,
                       ),
-                      const SizedBox(width: 12),
-                      _StatBadge(
-                        count: pending,
-                        label: 'Pending',
-                        color: AppColors.warning,
+                      child: Row(
+                        children: [
+                          _StatBadge(
+                            count: activities.length,
+                            label: 'Total',
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          _StatBadge(
+                            count: pending,
+                            label: 'Pending',
+                            color: AppColors.warning,
+                          ),
+                          const SizedBox(width: 12),
+                          _StatBadge(
+                            count: inProgress,
+                            label: 'Active',
+                            color: AppColors.success,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      _StatBadge(
-                        count: inProgress,
-                        label: 'Active',
-                        color: AppColors.success,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ) ?? const SizedBox.shrink(),
+                    );
+                  },
+                ) ??
+                const SizedBox.shrink(),
             const SizedBox(height: 4),
 
             // Activity list
@@ -244,15 +254,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           Icon(
                             Icons.assignment_outlined,
                             size: 64,
-                            color: AppColors.textTertiary.withValues(alpha: 0.5),
+                            color: AppColors.textTertiary.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                           const SizedBox(height: AppDimensions.paddingM),
                           Text(
                             AppStrings.noActivities,
-                            style:
-                                Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              color: AppColors.textTertiary,
-                            ),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(color: AppColors.textTertiary),
                           ),
                         ],
                       ),
@@ -354,7 +364,11 @@ class _FilterChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 14, color: isSelected ? color : AppColors.textTertiary),
+              Icon(
+                icon,
+                size: 14,
+                color: isSelected ? color : AppColors.textTertiary,
+              ),
               const SizedBox(width: 5),
             ],
             Text(
@@ -405,10 +419,7 @@ class _StatBadge extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 11,
-              color: color.withValues(alpha: 0.8),
-            ),
+            style: TextStyle(fontSize: 11, color: color.withValues(alpha: 0.8)),
           ),
         ],
       ),
@@ -463,9 +474,9 @@ class _CreateActivitySheetState extends ConsumerState<_CreateActivitySheet> {
       },
       failure: (message, _) {
         setState(() => _isCreating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       },
     );
   }
@@ -502,9 +513,9 @@ class _CreateActivitySheetState extends ConsumerState<_CreateActivitySheet> {
             Text(
               'Quick Start Session',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 20),
 
@@ -549,10 +560,10 @@ class _CreateActivitySheetState extends ConsumerState<_CreateActivitySheet> {
             Text(
               'Session Type',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textTertiary,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
-                  ),
+                color: AppColors.textTertiary,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
             ),
             const SizedBox(height: 10),
             Row(
@@ -659,7 +670,11 @@ class _TypeOption extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Icon(icon, color: isSelected ? color : AppColors.textTertiary, size: 24),
+              Icon(
+                icon,
+                color: isSelected ? color : AppColors.textTertiary,
+                size: 24,
+              ),
               const SizedBox(height: 6),
               Text(
                 label,

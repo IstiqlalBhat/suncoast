@@ -1,6 +1,7 @@
 import '../../../../core/utils/result.dart';
 import '../../../../shared/models/session_model.dart';
 import '../../../../shared/models/ai_event_model.dart';
+import '../../../../shared/models/media_attachment_model.dart';
 import '../datasources/session_remote_datasource.dart';
 
 class SessionRepository {
@@ -62,7 +63,7 @@ class SessionRepository {
   ) async {
     try {
       await _remoteDatasource.updateTranscript(sessionId, transcript);
-      return Result.success(null);
+      return const Result.success(null);
     } catch (e) {
       return Result.failure('Failed to update transcript: $e');
     }
@@ -78,6 +79,57 @@ class SessionRepository {
       return Result.success(events);
     } catch (e) {
       return Result.failure('Failed to fetch events: $e');
+    }
+  }
+
+  Future<Result<MediaAttachmentModel>> createMediaAttachment({
+    required String sessionId,
+    required MediaType type,
+    required String storagePath,
+    String? mimeType,
+    int? fileSizeBytes,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final attachment = await _remoteDatasource.createMediaAttachment(
+        sessionId: sessionId,
+        type: type,
+        storagePath: storagePath,
+        mimeType: mimeType,
+        fileSizeBytes: fileSizeBytes,
+        metadata: metadata,
+      );
+      return Result.success(attachment);
+    } catch (e) {
+      return Result.failure('Failed to create media attachment: $e');
+    }
+  }
+
+  Future<Result<MediaAttachmentModel>> updateMediaAttachment(
+    String attachmentId,
+    Map<String, dynamic> fields,
+  ) async {
+    try {
+      final attachment = await _remoteDatasource.updateMediaAttachment(
+        attachmentId,
+        fields,
+      );
+      return Result.success(attachment);
+    } catch (e) {
+      return Result.failure('Failed to update media attachment: $e');
+    }
+  }
+
+  Future<Result<List<MediaAttachmentModel>>> getMediaAttachments(
+    String sessionId,
+  ) async {
+    try {
+      final attachments = await _remoteDatasource.getMediaAttachments(
+        sessionId,
+      );
+      return Result.success(attachments);
+    } catch (e) {
+      return Result.failure('Failed to fetch media attachments: $e');
     }
   }
 }

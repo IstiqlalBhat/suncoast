@@ -58,10 +58,17 @@ class AudioRecordingService {
       _startAmplitudeMonitor();
       _logger.i('Audio stream started');
 
-      await for (final chunk in stream) {
-        yield chunk;
+      try {
+        await for (final chunk in stream) {
+          yield chunk;
+        }
+      } finally {
+        _isRecording = false;
+        _amplitudeTimer?.cancel();
       }
     } catch (e) {
+      _isRecording = false;
+      _amplitudeTimer?.cancel();
       _logger.e('Failed to start stream: $e');
       rethrow;
     }

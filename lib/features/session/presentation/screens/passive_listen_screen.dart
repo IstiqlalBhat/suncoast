@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -155,7 +156,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                   ),
                   child: Text(
                     sessionState.transcript.length > 200
-                        ? '...${sessionState.transcript.substring(sessionState.transcript.length - 200)}'
+                        ? '...${sessionState.transcript.substring(math.max(0, sessionState.transcript.length - 200))}'
                         : sessionState.transcript,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppColors.textSecondary,

@@ -2,12 +2,26 @@ import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { logFunctionError } from "../utils/logging";
+import * as admin from "firebase-admin";
 
 const deepgramSecret = defineSecret("DEEPGRAM_API_KEY");
 
 export const deepgramProxy = onRequest(
   { secrets: [deepgramSecret], cors: true },
   async (req, res) => {
+    // Verify Firebase Auth token
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Missing or invalid authorization header" });
+      return;
+    }
+    try {
+      await admin.auth().verifyIdToken(authHeader.split("Bearer ")[1]);
+    } catch {
+      res.status(401).json({ error: "Invalid authentication token" });
+      return;
+    }
+
     const deepgramApiKey = deepgramSecret.value();
 
     if (!deepgramApiKey) {
@@ -23,7 +37,10 @@ export const deepgramProxy = onRequest(
     }
 
     try {
-      const audioData = req.body;
+      const rawBody = req.rawBody || req.body;
+      const audioData: BodyInit = rawBody instanceof Buffer
+        ? new Uint8Array(rawBody) as unknown as BodyInit
+        : rawBody as BodyInit;
 
       const response = await fetch(
         "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&language=en",

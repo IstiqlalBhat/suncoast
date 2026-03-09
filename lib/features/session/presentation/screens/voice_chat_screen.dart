@@ -21,17 +21,15 @@ class VoiceChatScreen extends ConsumerStatefulWidget {
 }
 
 class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
-  bool _isHolding = false;
   bool _showReferencePanel = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(activeSessionProvider.notifier).startSession(
-        activityId: widget.activityId,
-        mode: SessionMode.chat,
-      );
+      ref
+          .read(activeSessionProvider.notifier)
+          .startSession(activityId: widget.activityId, mode: SessionMode.chat);
     });
   }
 
@@ -40,6 +38,20 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
     final sessionState = ref.watch(activeSessionProvider);
     final timerText = ref.watch(sessionTimerProvider);
     final sessionId = sessionState.session?.id;
+    final isHolding =
+        sessionState.conversationState == SessionConversationState.userSpeaking;
+    final isAiSpeaking =
+        sessionState.conversationState == SessionConversationState.aiSpeaking;
+    final isProcessing =
+        sessionState.conversationState == SessionConversationState.processing;
+    final waveformColor = isHolding ? AppColors.passive : AppColors.chat;
+    final statusText = switch (sessionState.conversationState) {
+      SessionConversationState.userSpeaking => 'Listening...',
+      SessionConversationState.processing => 'Thinking...',
+      SessionConversationState.aiSpeaking => 'AI responding...',
+      SessionConversationState.idle => AppStrings.holdToTalk,
+    };
+    final referenceCards = sessionState.referenceCards;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -75,8 +87,8 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                   horizontal: AppDimensions.paddingM,
                 ),
                 child: WaveformVisualizer(
-                  color: AppColors.chat,
-                  isActive: _isHolding,
+                  color: waveformColor,
+                  isActive: isHolding || isAiSpeaking || isProcessing,
                   amplitude: sessionState.audioLevel,
                 ),
               ),
@@ -84,17 +96,64 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
 
               // Status
               Text(
-                _isHolding ? AppStrings.listening : AppStrings.holdToTalk,
+                statusText,
                 style: TextStyle(
-                  color: AppColors.chat.withValues(alpha: 0.8),
+                  color: waveformColor.withValues(alpha: 0.8),
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: AppDimensions.paddingM),
 
+              if (sessionState.activityTitle.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppDimensions.paddingM,
+                  ),
+                  child: Text(
+                    sessionState.activityTitle,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              const SizedBox(height: AppDimensions.paddingM),
+
+              if (sessionState.error != null)
+                Container(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: AppDimensions.paddingM,
+                  ),
+                  padding: const EdgeInsets.all(AppDimensions.paddingM),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+                    border: Border.all(
+                      color: AppColors.error.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: AppColors.error,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          sessionState.error!,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.textPrimary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               // Reference panel (collapsible)
-              if (_showReferencePanel)
+              if (_showReferencePanel && referenceCards.isNotEmpty)
                 Container(
                   margin: const EdgeInsets.symmetric(
                     horizontal: AppDimensions.paddingM,
@@ -110,10 +169,14 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      const Row(
                         children: [
-                          Icon(Icons.auto_awesome, size: 16, color: AppColors.chat),
-                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.auto_awesome,
+                            size: 16,
+                            color: AppColors.chat,
+                          ),
+                          SizedBox(width: 8),
                           Text(
                             'AI Reference',
                             style: TextStyle(
@@ -125,10 +188,18 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        'Reference cards will appear here during conversation.',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                      if (referenceCards.isEmpty)
+                        Text(
+                          'Reference cards will appear here during conversation.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        )
+                      else
+                        ...referenceCards.map(
+                          (card) => _ReferenceCard(
+                            card: card,
+                            accentColor: AppColors.chat,
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -137,16 +208,22 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
               // Event feed
               Expanded(
                 child: sessionId != null
-                    ? ref.watch(sessionEventsProvider(sessionId)).when(
-                        data: (events) => EventFeed(events: events),
-                        loading: () => const Center(
-                          child: CircularProgressIndicator(color: AppColors.chat),
-                        ),
-                        error: (e, _) => Center(
-                          child: Text('Error loading events',
-                              style: TextStyle(color: AppColors.error)),
-                        ),
-                      )
+                    ? ref
+                          .watch(sessionEventsProvider(sessionId))
+                          .when(
+                            data: (events) => EventFeed(events: events),
+                            loading: () => const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.chat,
+                              ),
+                            ),
+                            error: (e, _) => const Center(
+                              child: Text(
+                                'Error loading events',
+                                style: TextStyle(color: AppColors.error),
+                              ),
+                            ),
+                          )
                     : const EventFeed(events: []),
               ),
 
@@ -157,25 +234,43 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                   children: [
                     // Hold-to-talk button
                     GestureDetector(
-                      onLongPressStart: (_) => setState(() => _isHolding = true),
-                      onLongPressEnd: (_) => setState(() => _isHolding = false),
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (_) {
+                        ref
+                            .read(activeSessionProvider.notifier)
+                            .startInteractiveTurn();
+                      },
+                      onTapUp: (_) {
+                        ref
+                            .read(activeSessionProvider.notifier)
+                            .finishInteractiveTurn();
+                      },
+                      onTapCancel: () {
+                        ref
+                            .read(activeSessionProvider.notifier)
+                            .finishInteractiveTurn();
+                      },
                       child: Container(
                         width: 88,
                         height: 88,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: _isHolding
+                          gradient: isHolding
                               ? AppGradients.chatGradient
                               : null,
-                          color: _isHolding ? null : AppColors.chat.withValues(alpha: 0.15),
+                          color: isHolding
+                              ? null
+                              : AppColors.chat.withValues(alpha: 0.15),
                           border: Border.all(
-                            color: AppColors.chat.withValues(alpha: _isHolding ? 0.8 : 0.3),
+                            color: AppColors.chat.withValues(
+                              alpha: isHolding ? 0.8 : 0.3,
+                            ),
                             width: 2,
                           ),
                         ),
                         child: Icon(
-                          _isHolding ? Icons.mic : Icons.mic_none,
-                          color: _isHolding ? Colors.white : AppColors.chat,
+                          isHolding ? Icons.mic : Icons.mic_none,
+                          color: isHolding ? Colors.white : AppColors.chat,
                           size: 40,
                         ),
                       ),
@@ -184,8 +279,12 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                     // End session
                     TextButton.icon(
                       onPressed: () => _endSession(context),
-                      icon: Icon(Icons.stop, color: AppColors.error, size: 18),
-                      label: Text(
+                      icon: const Icon(
+                        Icons.stop,
+                        color: AppColors.error,
+                        size: 18,
+                      ),
+                      label: const Text(
                         AppStrings.endSession,
                         style: TextStyle(color: AppColors.error),
                       ),
@@ -201,9 +300,73 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
   }
 
   Future<void> _endSession(BuildContext context) async {
-    final sessionId = await ref.read(activeSessionProvider.notifier).endSession();
+    final sessionId = await ref
+        .read(activeSessionProvider.notifier)
+        .endSession();
     if (sessionId != null && context.mounted) {
       context.go('/session/${widget.activityId}/summary?sessionId=$sessionId');
     }
+  }
+}
+
+class _ReferenceCard extends StatelessWidget {
+  final Map<String, dynamic> card;
+  final Color accentColor;
+
+  const _ReferenceCard({required this.card, required this.accentColor});
+
+  @override
+  Widget build(BuildContext context) {
+    final type = (card['type'] as String? ?? 'info').toLowerCase();
+    final title = card['title'] as String? ?? 'Reference';
+    final content = card['content'] as String? ?? '';
+    final subtitle = card['subtitle'] as String?;
+    final cardColor = switch (type) {
+      'task' => AppColors.success,
+      'contact' => AppColors.info,
+      'suggestion' => AppColors.textSecondary,
+      _ => accentColor,
+    };
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(AppDimensions.paddingM),
+      decoration: BoxDecoration(
+        color: cardColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        border: Border(left: BorderSide(color: cardColor, width: 3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (subtitle != null && subtitle.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+            ),
+          ],
+          if (content.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              content,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.textPrimary),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

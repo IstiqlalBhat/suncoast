@@ -59,7 +59,7 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
         if (onEndSession != null)
           TextButton(
             onPressed: () => _showEndSessionDialog(context),
-            child: Text(
+            child: const Text(
               'End',
               style: TextStyle(
                 color: AppColors.error,
@@ -87,7 +87,7 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
               Navigator.pop(ctx);
               onEndSession?.call();
             },
-            child: Text(
+            child: const Text(
               'End Session',
               style: TextStyle(color: AppColors.error),
             ),
