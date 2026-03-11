@@ -19,7 +19,7 @@ export function AppShell({ userName, userEmail, children }: AppShellProps) {
         <aside className="rounded-[28px] border border-white/10 bg-white/6 p-4 backdrop-blur md:p-5 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)] lg:w-80">
           <div className="mb-8">
             <div className="mb-4 inline-flex rounded-full border border-amber-200/20 bg-amber-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-amber-100/80">
-              FieldFlow
+              myEA
             </div>
             <h1 className="text-3xl font-semibold tracking-tight text-white">
               Field operations, live.

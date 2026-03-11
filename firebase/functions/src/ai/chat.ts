@@ -101,9 +101,9 @@ export const chat = onCall(
       },
     });
 
-    const prompt = `You are FieldFlow AI, a helpful voice assistant for field workers. You help with inspections, assessments, and documentation.
+    const prompt = `You are myEA (my Executive Assistant), a helpful AI voice assistant. You help with tasks, planning, assessments, and documentation.
 
-Session Context: ${sessionContext || "General field session"}
+Session Context: ${sessionContext || "General session"}
 
 User said: "${message}"
 

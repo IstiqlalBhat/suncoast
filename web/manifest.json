@@ -1,6 +1,6 @@
 {
-    "name": "field_flow",
-    "short_name": "field_flow",
+    "name": "myEA",
+    "short_name": "myEA",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

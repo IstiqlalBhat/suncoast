@@ -3,7 +3,7 @@
   "name": "create_action",
   "description": "Log an action that the user performed or plans to perform. Use this when the user says they did something, fixed something, or will do something.",
   "api_schema": {
-    "url": "https://us-central1-alchemy-4bc7c.cloudfunctions.net/agentCreateAction",
+    "url": "https://us-central1-alchemy-87529.cloudfunctions.net/agentCreateAction",
     "method": "POST",
     "path_params_schema": [],
     "query_params_schema": [],
@@ -38,7 +38,7 @@
           "id": "session_id",
           "type": "string",
           "value_type": "llm_prompt",
-          "description": "The current FieldFlow session ID. Use the session_id from the conversation context.",
+          "description": "The current myEA session ID. Use the session_id from the conversation context.",
           "dynamic_variable": "",
           "constant_value": "",
           "enum": null,

@@ -280,7 +280,7 @@ class LoginNotifier extends StateNotifier<LoginState> {
 
     // Prompt biometric verification
     final authenticated = await _biometricService.authenticate(
-      reason: 'Sign in to FieldFlow',
+      reason: 'Sign in to myEA',
     );
 
     if (!authenticated) {

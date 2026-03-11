@@ -1214,8 +1214,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         final stream = _audioService.startStream(sampleRate: 24000);
         _voiceSampleRate = 24000;
         _voiceAudioSub = stream.listen((chunk) {
-          if (!state.isMuted &&
-              state.conversationState != SessionConversationState.aiSpeaking) {
+          if (!state.isMuted && _voiceService?.isAiSpeaking != true) {
             _voiceService?.sendAudioChunk(chunk);
           }
         });
@@ -1224,8 +1223,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         final stream = _audioService.startStream(sampleRate: 16000);
         _voiceSampleRate = 16000;
         _voiceAudioSub = stream.listen((chunk) {
-          if (!state.isMuted &&
-              state.conversationState != SessionConversationState.aiSpeaking) {
+          if (!state.isMuted && _voiceService?.isAiSpeaking != true) {
             _voiceService?.sendAudioChunk(chunk);
           }
         });

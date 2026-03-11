@@ -48,7 +48,7 @@ export const analyzeImage = onCall(
     });
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-pro-preview",
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -132,7 +132,9 @@ Keep the output practical, specific, and concise.`;
       if (parsed.event && sessionId) {
         const { error: insertError } = await supabase.from("ai_events").insert({
           session_id: sessionId,
-          type: parsed.event.type || "observation",
+          type: ["observation", "action", "lookup"].includes(parsed.event.type || "")
+            ? parsed.event.type
+            : "observation",
           content: parsed.event.content || description,
           source: "ai",
           metadata: {

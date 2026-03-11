@@ -1,4 +1,4 @@
--- Clear FieldFlow application data while preserving auth users and profiles.
+-- Clear myEA application data while preserving auth users and profiles.
 -- This removes runtime records and derived per-user rows, then recreates one
 -- organization and one settings row per existing profile.
 --

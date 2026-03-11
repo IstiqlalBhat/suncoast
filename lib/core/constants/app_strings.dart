@@ -1,5 +1,5 @@
 abstract final class AppStrings {
-  static const appName = 'FieldFlow';
+  static const appName = 'myEA';
 
   // Auth
   static const login = 'Sign In';

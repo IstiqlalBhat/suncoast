@@ -71,7 +71,7 @@ export function AuthPanel() {
         <section className="rounded-[32px] border border-white/10 bg-white/6 p-6 backdrop-blur md:p-10">
           <div className="max-w-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-200/80">
-              FieldFlow Web
+              myEA Web
             </p>
             <h1 className="mt-4 text-5xl font-semibold tracking-tight text-white md:text-6xl">
               Dispatch, document, and summarize field work from the browser.

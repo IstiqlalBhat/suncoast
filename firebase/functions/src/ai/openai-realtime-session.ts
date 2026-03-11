@@ -10,17 +10,17 @@ const supabaseUrl = defineSecret("SUPABASE_URL");
 const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
 
 function buildMediaInstructions(activityContext: string) {
-  const trimmedContext = activityContext.trim() || "Field session";
+  const trimmedContext = activityContext.trim() || "General session";
 
   return [
-    "You are FieldFlow's voice-first realtime media assistant for field workers.",
+    "You are myEA (my Executive Assistant), a voice-first realtime media assistant.",
     "You communicate primarily through voice. Speak naturally, concisely, and practically.",
-    "When the session starts, greet the user briefly and ask how you can help with their field work.",
+    "When the session starts, greet the user briefly and ask how you can help.",
     "",
     "Your capabilities:",
     "- Analyze photos the user shares with you and describe what you see",
     "- Read and discuss PDF documents the user uploads",
-    "- Answer questions about the field session context",
+    "- Answer questions about the session context",
     "- Provide practical, operational guidance",
     "",
     "When you need visual context, call the request_image tool.",
@@ -28,23 +28,23 @@ function buildMediaInstructions(activityContext: string) {
     "Do not ask the user to take a photo in text — use the tools so the app can show a proper UI.",
     "",
     "Keep responses concise and operational, not chatty.",
-    "If analyzing media, describe what is clearly visible, explain relevance to the field context,",
+    "If analyzing media, describe what is clearly visible, explain relevance to the context,",
     "call out defects or risks, and suggest follow-up if needed.",
     "",
-    "Use this field session context:",
+    "Use this session context:",
     trimmedContext,
   ].join("\n");
 }
 
 export const createRealtimeMediaSession = onCall(
-  { secrets: [openaiKey, supabaseUrl, supabaseServiceKey] },
+  { secrets: [openaiKey, supabaseUrl, supabaseServiceKey], timeoutSeconds: 120 },
   async (request) => {
     const supabase = createClient(supabaseUrl.value(), supabaseServiceKey.value());
     const { user, payload } = await authenticateCallableRequest(request, supabase);
     const sessionId = typeof payload.sessionId === "string" ? payload.sessionId.trim() : "";
     const activityContext = typeof payload.activityContext === "string"
       ? payload.activityContext
-      : "Field session";
+      : "General session";
 
     if (!sessionId) {
       throw new HttpsError("invalid-argument", "sessionId is required");
@@ -60,7 +60,10 @@ export const createRealtimeMediaSession = onCall(
     const instructions = buildMediaInstructions(activityContext);
 
     try {
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), 60000);
       const response = await fetch("https://api.openai.com/v1/realtime/sessions", {
+        signal: controller.signal,
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -108,8 +111,18 @@ export const createRealtimeMediaSession = onCall(
         }),
       });
 
+      clearTimeout(fetchTimeout);
       const rawBody = await response.text();
-      const body = rawBody ? JSON.parse(rawBody) as Record<string, unknown> : {};
+      let body: Record<string, unknown>;
+      try {
+        body = rawBody ? JSON.parse(rawBody) as Record<string, unknown> : {};
+      } catch {
+        logger.error("createRealtimeMediaSession non-JSON response", {
+          rawBody: rawBody.substring(0, 200),
+          status: response.status,
+        });
+        throw new Error(`OpenAI returned non-JSON: ${rawBody.substring(0, 100)}`);
+      }
 
       if (!response.ok) {
         logger.error("createRealtimeMediaSession upstream error", {

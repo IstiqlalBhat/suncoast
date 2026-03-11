@@ -55,6 +55,7 @@ class OpenAiRealtimeVoiceService {
   Stream<String> get errorStream => _errorController.stream;
   VoiceSessionStatus get status => _status;
   bool get isConnected => _status == VoiceSessionStatus.connected;
+  bool get isAiSpeaking => _aiSpeaking;
 
   static const int outputSampleRate = 24000;
 
@@ -132,6 +133,9 @@ class OpenAiRealtimeVoiceService {
               },
             },
           ],
+          'input_audio_transcription': {
+            'model': 'whisper-1',
+          },
           'max_response_output_tokens': 4096,
         },
       });

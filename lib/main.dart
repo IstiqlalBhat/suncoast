@@ -61,7 +61,7 @@ Future<void> main() async {
       overrides: [
         sharedPreferencesProvider.overrideWithValue(sharedPreferences),
       ],
-      child: const FieldFlowApp(),
+      child: const MyEAApp(),
     ),
   );
 }

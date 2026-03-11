@@ -14,8 +14,8 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FieldFlow Web",
-  description: "Web control room for FieldFlow operations.",
+  title: "myEA Web",
+  description: "Web control room for myEA operations.",
 };
 
 export default function RootLayout({

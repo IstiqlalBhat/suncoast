@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:field_flow/core/utils/result.dart';
-import 'package:field_flow/features/auth/data/repositories/auth_repository.dart';
-import 'package:field_flow/features/auth/presentation/providers/auth_provider.dart';
-import 'package:field_flow/features/settings/data/repositories/settings_repository.dart';
-import 'package:field_flow/services/biometric/biometric_service.dart';
-import 'package:field_flow/services/storage/secure_storage_service.dart';
-import 'package:field_flow/shared/models/user_settings_model.dart';
+import 'package:my_ea/core/utils/result.dart';
+import 'package:my_ea/features/auth/data/repositories/auth_repository.dart';
+import 'package:my_ea/features/auth/presentation/providers/auth_provider.dart';
+import 'package:my_ea/features/settings/data/repositories/settings_repository.dart';
+import 'package:my_ea/services/biometric/biometric_service.dart';
+import 'package:my_ea/services/storage/secure_storage_service.dart';
+import 'package:my_ea/shared/models/user_settings_model.dart';
 
 class MockAuthRepository extends Mock implements AuthRepository {}
 

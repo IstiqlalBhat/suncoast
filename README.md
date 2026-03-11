@@ -1,6 +1,6 @@
-# FieldFlow
+# myEA
 
-Voice-first mobile AI agent for field workers. Capture observations, analyze media, and generate structured session summaries — all through natural voice interaction.
+**my Executive Assistant** — a voice-first mobile AI agent. Capture observations, analyze media, and generate structured session summaries through natural voice interaction.
 
 Built with Flutter, Supabase, Firebase Cloud Functions, OpenAI (Whisper + Realtime + TTS), Google Gemini, and ElevenLabs.
 
@@ -162,7 +162,7 @@ voice-mobile/
 
 ## Session Modes
 
-FieldFlow supports three session modes, each tailored to a different field workflow:
+myEA supports three session modes:
 
 ### Passive Listen
 
@@ -213,7 +213,7 @@ These are invoked from the mobile/web clients via Firebase SDK. All validate Sup
 |----------|----------|---------|
 | `chat` | Gemini Pro | Conversational AI with structured event + reference card extraction |
 | `processTranscript` | Gemini Pro | Analyze transcript text, extract observation/lookup/action events |
-| `analyzeImage` | Gemini Flash | Field inspection image analysis, updates `media_attachments` record |
+| `analyzeImage` | Gemini Flash | Image analysis, updates `media_attachments` record |
 | `extractPdfText` | — | Extract text from PDF (pdf-parse), max 30KB output |
 | `createRealtimeMediaSession` | — | Provision OpenAI Realtime API session, return `clientSecret` |
 | `generateSummary` | Gemini Flash | Generate structured session summary from transcript + events + media |
@@ -234,13 +234,13 @@ These are standard Express-style endpoints. The webhook endpoints are called by 
 
 ### AI System Prompts
 
-**chat.ts** — Gemini acts as "FieldFlow AI, a helpful voice assistant for field workers." Returns JSON with `message` (spoken response), `events[]` (observation/lookup/action), and `referenceCards[]` (info/contact/task/suggestion cards).
+**chat.ts** — Gemini acts as "myEA (my Executive Assistant)." Returns JSON with `message` (spoken response), `events[]` (observation/lookup/action), and `referenceCards[]` (info/contact/task/suggestion cards).
 
 **process-session.ts** — Gemini analyzes raw transcripts and extracts structured events. Categorizes each as observation, lookup, or action with status.
 
-**vision.ts** — Gemini Flash reviews field inspection images. Returns description, context relation, and an extracted event.
+**vision.ts** — Gemini Flash reviews images. Returns description, context relation, and an extracted event.
 
-**openai-realtime-session.ts** — OpenAI Realtime agent is configured as "FieldFlow's voice-first realtime media assistant." Has `request_image` and `request_pdf` tool definitions. Uses server-side VAD (threshold 0.5, 300ms prefix, 500ms silence).
+**openai-realtime-session.ts** — OpenAI Realtime agent is configured as "myEA (my Executive Assistant), a voice-first realtime media assistant." Has `request_image` and `request_pdf` tool definitions. Uses server-side VAD (threshold 0.5, 300ms prefix, 500ms silence).
 
 **summary.ts** — Gemini Flash generates a structured summary from the full session transcript, AI events, and media attachments. Outputs observation summary, key observations, actions taken with statuses, follow-ups with priority/due dates, and external record links.
 

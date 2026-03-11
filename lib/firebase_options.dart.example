@@ -35,6 +35,6 @@ class DefaultFirebaseOptions {
     messagingSenderId: 'YOUR_SENDER_ID',
     projectId: 'YOUR_PROJECT_ID',
     storageBucket: 'YOUR_STORAGE_BUCKET',
-    iosBundleId: 'com.fieldflow.fieldFlow',
+    iosBundleId: 'com.myea.app',
   );
 }

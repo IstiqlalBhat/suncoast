@@ -1,7 +1,7 @@
 {
-  "name": "fieldflow-functions",
+  "name": "myea-functions",
   "version": "1.0.0",
-  "description": "FieldFlow Firebase Cloud Functions",
+  "description": "myEA Firebase Cloud Functions",
   "main": "lib/index.js",
   "scripts": {
     "build": "tsc",

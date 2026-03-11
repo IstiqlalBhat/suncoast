@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.fieldflow" "\0"
-            VALUE "FileDescription", "field_flow" "\0"
+            VALUE "CompanyName", "com.myea" "\0"
+            VALUE "FileDescription", "myEA" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "field_flow" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.fieldflow. All rights reserved." "\0"
-            VALUE "OriginalFilename", "field_flow.exe" "\0"
-            VALUE "ProductName", "field_flow" "\0"
+            VALUE "InternalName", "my_ea" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.myea. All rights reserved." "\0"
+            VALUE "OriginalFilename", "my_ea.exe" "\0"
+            VALUE "ProductName", "myEA" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

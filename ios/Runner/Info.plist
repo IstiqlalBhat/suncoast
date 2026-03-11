@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Field Flow</string>
+	<string>myEA</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>field_flow</string>
+	<string>myEA</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -48,11 +48,11 @@
 		</dict>
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
-	<string>FieldFlow uses Face ID for quick and secure sign-in to your account.</string>
+	<string>myEA uses Face ID for quick and secure sign-in to your account.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>FieldFlow needs microphone access to record audio during field sessions.</string>
+	<string>myEA needs microphone access to record audio during sessions.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>FieldFlow needs camera access to capture photos and videos during sessions.</string>
+	<string>myEA needs camera access to capture photos and videos during sessions.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

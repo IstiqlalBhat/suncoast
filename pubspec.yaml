@@ -1,5 +1,5 @@
-name: field_flow
-description: "FieldFlow - Voice-First Mobile AI Agent for Field Workers"
+name: my_ea
+description: "myEA - Voice-First Mobile AI Agent"
 publish_to: 'none'
 version: 1.0.0+1
 

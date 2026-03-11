@@ -1,4 +1,4 @@
-package com.fieldflow.field_flow
+package com.myea.app
 
 import io.flutter.embedding.android.FlutterActivity
 

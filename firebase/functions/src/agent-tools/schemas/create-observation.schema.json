@@ -3,7 +3,7 @@
   "name": "create_observation",
   "description": "Record a field observation that the user noticed or saw. Use this when the user describes something they observed, spotted, or noticed in the field.",
   "api_schema": {
-    "url": "https://us-central1-alchemy-4bc7c.cloudfunctions.net/agentCreateObservation",
+    "url": "https://us-central1-alchemy-87529.cloudfunctions.net/agentCreateObservation",
     "method": "POST",
     "path_params_schema": [],
     "query_params_schema": [],
@@ -49,7 +49,7 @@
           "id": "session_id",
           "type": "string",
           "value_type": "llm_prompt",
-          "description": "The current FieldFlow session ID. Use the session_id from the conversation context.",
+          "description": "The current myEA session ID. Use the session_id from the conversation context.",
           "dynamic_variable": "",
           "constant_value": "",
           "enum": null,
