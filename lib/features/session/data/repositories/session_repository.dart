@@ -71,15 +71,11 @@ class SessionRepository {
     required String userId,
   }) async {
     try {
-      final session = await _remoteDatasource.getLatestCompletedSessionForActivity(
-        activityId,
-        userId,
-      );
+      final session = await _remoteDatasource
+          .getLatestCompletedSessionForActivity(activityId, userId);
       return Result.success(session);
     } catch (e) {
-      return Result.failure(
-        'Failed to load latest completed session: $e',
-      );
+      return Result.failure('Failed to load latest completed session: $e');
     }
   }
 
@@ -108,6 +104,27 @@ class SessionRepository {
       return Result.success(event);
     } catch (e) {
       return Result.failure('Failed to update AI event: $e');
+    }
+  }
+
+  Future<Result<AiEventModel>> createAiEvent({
+    required String sessionId,
+    required AiEventType type,
+    required String content,
+    String source = 'ai',
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final event = await _remoteDatasource.createAiEvent(
+        sessionId: sessionId,
+        type: type,
+        content: content,
+        source: source,
+        metadata: metadata,
+      );
+      return Result.success(event);
+    } catch (e) {
+      return Result.failure('Failed to create AI event: $e');
     }
   }
 

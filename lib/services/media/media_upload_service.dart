@@ -15,6 +15,7 @@ class MediaUploadService {
     required File file,
     required String sessionId,
     required String type,
+    String? contentType,
   }) async {
     try {
       final extension = file.path.split('.').last;
@@ -27,7 +28,7 @@ class MediaUploadService {
             storagePath,
             file,
             fileOptions: FileOptions(
-              contentType: _getContentType(type, extension),
+              contentType: contentType ?? _getContentType(type, extension),
             ),
           );
 

@@ -130,7 +130,7 @@ export const generateSummary = onCall(
         )
         .join("\n");
 
-      const prompt = `You are generating the final structured summary for a field session.
+      const prompt = `You are generating the final structured summary for a session. Your job is to produce a thorough, accurate summary that captures everything operationally meaningful — someone reading this summary instead of the transcript should not miss any important detail.
 
 Activity title: ${activity?.title || "Unknown activity"}
 Activity description: ${activity?.description || "No description"}
@@ -147,16 +147,35 @@ ${eventsText || "No events recorded"}
 Attachments captured during session:
 ${attachmentsText || "No attachments captured"}
 
-Provide a structured summary as JSON:
+INSTRUCTIONS:
+
+1. READ THE FULL TRANSCRIPT CAREFULLY. The AI Events list is a starting point, but it may have missed details. Cross-reference against the transcript and add anything operationally significant that was not captured as an event.
+
+2. KEY OBSERVATIONS — Be comprehensive. Each bullet should cover one specific point.
+   - When the person describes HOW they did something and WHAT they found, those are separate observations — do not merge the method into the result.
+   - When the person states what something can or cannot do, or is or is not designed for, that is its own observation.
+   - Capture rules, requirements, and prerequisites even if stated as general knowledge.
+   - If something was repeated or emphasized, it is important — do not skip it.
+   Do NOT compress multiple distinct findings into one bullet.
+
+3. FOLLOW-UPS — Generate follow-ups for:
+   - Anything discussed as a requirement but not directly verified during this session
+   - Items the person flagged as important but did not fully resolve
+   - Checks or verifications implied by the work performed
+   Assign priority: "high" for safety or compliance gaps, "medium" for standard checks, "low" for minor improvements.
+
+4. ACTIONS — Only include concrete tasks that were actually performed or decided, not observations.
+
+Provide the summary as JSON:
 {
   "observation_summary": "A concise paragraph describing what happened during the session",
   "key_observations": ["observation 1", "observation 2", ...],
   "actions_taken": ["action 1", "action 2", ...],
   "action_statuses": [
     {
-      "label": "Created maintenance ticket",
+      "label": "Short action label",
       "status": "completed|in_progress|pending|failed",
-      "external_label": "ClickUp task",
+      "external_label": null,
       "external_url": null
     }
   ],

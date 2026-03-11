@@ -25,6 +25,8 @@ class EventFeed extends StatefulWidget {
 
 class _EventFeedState extends State<EventFeed> {
   late final ScrollController _internalController;
+  final Set<String> _seenEventIds = {};
+  final Set<String> _newEventIds = {};
 
   ScrollController get _controller =>
       widget.scrollController ?? _internalController;
@@ -33,12 +35,26 @@ class _EventFeedState extends State<EventFeed> {
   void initState() {
     super.initState();
     _internalController = ScrollController();
+    // Seed with initial events so they don't all animate on first load.
+    for (final e in widget.events) {
+      _seenEventIds.add(e.id);
+    }
   }
 
   @override
   void didUpdateWidget(covariant EventFeed oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.events.length > oldWidget.events.length) {
+
+    // Identify newly arrived events — mark for animation, then add to seen.
+    _newEventIds.clear();
+    for (final e in widget.events) {
+      if (!_seenEventIds.contains(e.id)) {
+        _newEventIds.add(e.id);
+        _seenEventIds.add(e.id);
+      }
+    }
+
+    if (_newEventIds.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_controller.hasClients) return;
         _controller.animateTo(
@@ -106,19 +122,30 @@ class _EventFeedState extends State<EventFeed> {
       );
     }
 
+    // Sort by created_at ascending; nulls go last.
+    final sorted = List<AiEventModel>.of(widget.events)
+      ..sort((a, b) {
+        if (a.createdAt == null && b.createdAt == null) return 0;
+        if (a.createdAt == null) return 1;
+        if (b.createdAt == null) return -1;
+        return a.createdAt!.compareTo(b.createdAt!);
+      });
+
     return ListView.separated(
       controller: _controller,
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.paddingM,
         vertical: AppDimensions.paddingS,
       ),
-      itemCount: widget.events.length,
+      itemCount: sorted.length,
       separatorBuilder: (context, index) =>
           const SizedBox(height: AppDimensions.paddingS),
       itemBuilder: (context, index) {
-        final event = widget.events[index];
+        final event = sorted[index];
+        final isNew = _newEventIds.contains(event.id);
         Widget row = EventFeedRow(
           event: event,
+          animate: isNew,
           onTap: widget.onEditEvent != null
               ? () => _showEditDialog(event)
               : null,

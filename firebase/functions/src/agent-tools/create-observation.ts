@@ -52,7 +52,6 @@ export const agentCreateObservation = onRequest(
         type: "observation",
         content: description,
         status: "completed",
-        confidence: 0.9,
         metadata: {
           source: "elevenlabs_agent",
           severity: severity || "medium",

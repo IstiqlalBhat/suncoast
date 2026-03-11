@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
@@ -47,20 +47,47 @@ export const analyzeImage = onCall(
       imageLength: typeof image === "string" ? image.length : 0,
     });
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-flash-preview",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          required: ["description", "contextRelation", "event"],
+          properties: {
+            description: {
+              type: SchemaType.STRING,
+            },
+            contextRelation: {
+              type: SchemaType.STRING,
+            },
+            event: {
+              type: SchemaType.OBJECT,
+              required: ["type", "content"],
+              properties: {
+                type: {
+                  type: SchemaType.STRING,
+                },
+                content: {
+                  type: SchemaType.STRING,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
 
-    const prompt = `You are a field inspection AI assistant. Analyze this image and provide a detailed condition report.
+    const prompt = `You are a field inspection AI assistant. Review the image for a field worker.
 
 Context: ${context || "Field inspection"}
 
-Provide your analysis as JSON:
-{
-  "analysis": "Detailed description of what you see, any issues, conditions, or notable observations",
-  "event": {
-    "type": "observation",
-    "content": "Brief summary of the key finding from this image"
-  }
-}`;
+Return JSON only.
+- description: what is visible in the image, including any notable issue, condition, or observation.
+- contextRelation: how the image relates to the provided field context.
+- event: a concise observation event with type and content.
+
+Keep the output practical, specific, and concise.`;
 
     try {
       const imagePart = {
@@ -71,20 +98,28 @@ Provide your analysis as JSON:
       };
 
       const result = await model.generateContent([prompt, imagePart]);
-      const text = result.response.text();
+      const text = result.response.text().trim();
+      const parsed = JSON.parse(text) as {
+        description?: string;
+        contextRelation?: string;
+        event?: { type?: string; content?: string };
+      };
 
-      const jsonMatch = text.match(/\{[\s\S]*?\}(?=[^}]*$)/s) || text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error("Failed to parse vision response");
+      const description = parsed.description?.trim() || "";
+      const contextRelation = parsed.contextRelation?.trim() || "";
+      const analysis = [description, contextRelation]
+        .filter((section) => section.length > 0)
+        .join("\n\n");
+
+      if (!analysis) {
+        throw new Error("Vision response did not include analysis text");
       }
-
-      const parsed = JSON.parse(jsonMatch[0]);
 
       if (attachmentId) {
         const { error: updateError } = await supabase
           .from("media_attachments")
           .update({
-            ai_analysis: parsed.analysis || "",
+            ai_analysis: analysis,
             analysis_status: "completed",
           })
           .eq("id", attachmentId);
@@ -98,8 +133,7 @@ Provide your analysis as JSON:
         const { error: insertError } = await supabase.from("ai_events").insert({
           session_id: sessionId,
           type: parsed.event.type || "observation",
-          content: parsed.event.content,
-          confidence: 0.9,
+          content: parsed.event.content || description,
           source: "ai",
           metadata: {
             source: "vision",
@@ -112,8 +146,9 @@ Provide your analysis as JSON:
       }
 
       return {
-        analysis: parsed.analysis || "",
+        analysis,
         event: parsed.event || null,
+        contextRelation,
       };
     } catch (error) {
       if (attachmentId) {

@@ -8,8 +8,14 @@ import '../../shared/models/ai_event_model.dart';
 class EventFeedRow extends StatelessWidget {
   final AiEventModel event;
   final VoidCallback? onTap;
+  final bool animate;
 
-  const EventFeedRow({super.key, required this.event, this.onTap});
+  const EventFeedRow({
+    super.key,
+    required this.event,
+    this.onTap,
+    this.animate = true,
+  });
 
   Color get _eventColor => switch (event.type) {
     AiEventType.observation => AppColors.observation,
@@ -109,11 +115,6 @@ class EventFeedRow extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
               ],
-              if (event.confidence != null)
-                Text(
-                  '${(event.confidence! * 100).toInt()}%',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
             ],
           ),
           const SizedBox(height: 8),
@@ -150,18 +151,19 @@ class EventFeedRow extends StatelessWidget {
       ),
     );
 
-    final animated =
-        child.animate().fadeIn(duration: 300.ms).slideX(begin: 0.1, end: 0);
+    final visual = animate
+        ? child.animate().fadeIn(duration: 300.ms).slideX(begin: 0.1, end: 0)
+        : child;
 
     if (onTap != null) {
       return InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-        child: animated,
+        child: visual,
       );
     }
 
-    return animated;
+    return visual;
   }
 }
 

@@ -1,15 +1,13 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_dimensions.dart';
-import '../../../../core/constants/app_strings.dart';
-import '../../../../core/theme/gradients.dart';
-import '../../../../shared/models/media_attachment_model.dart';
 import '../../../../shared/models/session_model.dart';
-import '../../../../shared/widgets/event_feed.dart';
 import '../../../../shared/widgets/session_app_bar.dart';
-import '../../../../shared/widgets/waveform_visualizer.dart';
+import '../models/conversation_entry.dart';
 import '../providers/session_provider.dart';
 
 class MediaCaptureScreen extends ConsumerStatefulWidget {
@@ -22,8 +20,8 @@ class MediaCaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
-  String _selectedCapture = 'photo';
   bool _isEnding = false;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -36,333 +34,95 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final sessionState = ref.watch(activeSessionProvider);
     final timerText = ref.watch(sessionTimerProvider);
-    final sessionId = sessionState.session?.id;
-    final isHolding =
-        sessionState.conversationState == SessionConversationState.userSpeaking;
-    final isAiSpeaking =
-        sessionState.conversationState == SessionConversationState.aiSpeaking;
-    final isProcessing =
-        sessionState.conversationState == SessionConversationState.processing;
-    final waveformColor = isHolding ? AppColors.passive : AppColors.chat;
-    final statusText = switch (sessionState.conversationState) {
-      SessionConversationState.userSpeaking =>
-        'Listening for your next instruction...',
-      SessionConversationState.processing => 'Analyzing your request...',
-      SessionConversationState.aiSpeaking => 'AI responding...',
-      SessionConversationState.idle => AppStrings.holdToTalk,
-    };
+
+    // Scroll to bottom when new entries arrive
+    ref.listen(activeSessionProvider, (prev, next) {
+      if ((prev?.conversationEntries.length ?? 0) <
+          next.conversationEntries.length) {
+        _scrollToBottom();
+      }
+    });
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       extendBodyBehindAppBar: true,
       appBar: SessionAppBar(
-        title: AppStrings.mediaCapture,
+        title: sessionState.activityTitle.isNotEmpty
+            ? sessionState.activityTitle
+            : 'Media Assistant',
         subtitle: timerText,
         accentColor: AppColors.media,
         onEndSession: () => _endSession(context),
       ),
       body: Stack(
         children: [
-          Container(
-        decoration: BoxDecoration(
-          gradient: AppGradients.sessionGradient(AppColors.media),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: AppDimensions.paddingM),
+          SafeArea(
+            child: Column(
+              children: [
+                // Error banner
+                if (sessionState.error != null)
+                  _ErrorBanner(message: sessionState.error!),
 
-              // Waveform
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.paddingM,
-                ),
-                child: WaveformVisualizer(
-                  color: waveformColor,
-                  isActive: isHolding || isAiSpeaking || isProcessing,
-                  amplitude: sessionState.audioLevel,
-                ),
-              ),
-              const SizedBox(height: AppDimensions.paddingS),
-              Text(
-                statusText,
-                style: TextStyle(
-                  color: waveformColor.withValues(alpha: 0.8),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: AppDimensions.paddingM),
-
-              if (sessionState.activityTitle.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppDimensions.paddingM,
-                  ),
-                  child: Text(
-                    sessionState.activityTitle,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.textPrimary,
-                    ),
-                    textAlign: TextAlign.center,
+                // Conversation view
+                Expanded(
+                  child: _ConversationView(
+                    entries: sessionState.conversationEntries,
+                    scrollController: _scrollController,
+                    voiceStatus: sessionState.voiceStatus,
                   ),
                 ),
-              const SizedBox(height: AppDimensions.paddingM),
 
-              if (sessionState.aiResponse != null &&
-                  sessionState.aiResponse!.trim().isNotEmpty)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: AppDimensions.paddingM,
+                // Voice state indicator
+                _VoiceStateIndicator(
+                  voiceStatus: sessionState.voiceStatus,
+                  audioLevel: sessionState.audioLevel,
+                  conversationState: sessionState.conversationState,
+                ),
+
+                // Tool request card (when AI asks for media)
+                if (sessionState.activeToolRequest != null)
+                  _ToolRequestCard(
+                    request: sessionState.activeToolRequest!,
+                    onAddPhoto: () => _handleToolRequestPhoto(),
+                    onAddPdf: () => _handleToolRequestPdf(),
+                    onDismiss: () => ref
+                        .read(activeSessionProvider.notifier)
+                        .dismissToolRequest(),
                   ),
-                  padding: const EdgeInsets.all(AppDimensions.paddingM),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-                    border: Border.all(
-                      color: AppColors.media.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'AI Prompt',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: AppColors.media,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        sessionState.aiResponse!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: AppDimensions.paddingM),
 
-              // Capture mode pills
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.paddingM,
+                // Bottom controls
+                _BottomControls(
+                  isMuted: sessionState.isMuted,
+                  isProcessing: sessionState.isProcessing,
+                  onToggleMute: () =>
+                      ref.read(activeSessionProvider.notifier).toggleMute(),
+                  onAddMedia: _handleCapture,
+                  onEnd: () => _endSession(context),
                 ),
-                child: Row(
-                  children: [
-                    _CapturePill(
-                      icon: Icons.camera_alt,
-                      label: 'Photo',
-                      isSelected: _selectedCapture == 'photo',
-                      onTap: () => setState(() => _selectedCapture = 'photo'),
-                    ),
-                    const SizedBox(width: 8),
-                    _CapturePill(
-                      icon: Icons.videocam,
-                      label: 'Video',
-                      isSelected: _selectedCapture == 'video',
-                      onTap: () => setState(() => _selectedCapture = 'video'),
-                    ),
-                    const SizedBox(width: 8),
-                    _CapturePill(
-                      icon: Icons.attach_file,
-                      label: 'File',
-                      isSelected: _selectedCapture == 'file',
-                      onTap: () => setState(() => _selectedCapture = 'file'),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppDimensions.paddingM),
-
-              // Media timeline + Event feed (share remaining space)
-              Expanded(
-                child: Column(
-                  children: [
-                    // Media timeline / uploaded items
-                    Flexible(
-                      flex: sessionState.mediaItems.isEmpty ? 0 : 1,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: AppDimensions.paddingM,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-                          border: Border.all(
-                            color: AppColors.media.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: sessionState.mediaItems.isEmpty
-                            ? Padding(
-                                padding: const EdgeInsets.symmetric(vertical: AppDimensions.paddingM),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_photo_alternate_outlined,
-                                      color: AppColors.media.withValues(alpha: 0.5),
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'Tap capture to add media',
-                                      style: TextStyle(
-                                        color: AppColors.textTertiary,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                            : ListView.separated(
-                                shrinkWrap: true,
-                                padding: const EdgeInsets.all(AppDimensions.paddingS),
-                                itemCount: sessionState.mediaItems.length,
-                                separatorBuilder: (context, index) =>
-                                    const SizedBox(height: AppDimensions.paddingS),
-                                itemBuilder: (context, index) {
-                                  final item = sessionState.mediaItems[index];
-                                  return _MediaAttachmentCard(item: item);
-                                },
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: AppDimensions.paddingS),
-
-                    // Event feed
-                    Expanded(
-                      child: sessionId != null
-                          ? ref
-                                .watch(sessionEventsProvider(sessionId))
-                                .when(
-                                  data: (events) => EventFeed(
-                                    events: events,
-                                    onEditEvent: (event, fields) => ref
-                                        .read(sessionRepositoryProvider)
-                                        .updateAiEvent(event.id, fields),
-                                    onDeleteEvent: (event) => ref
-                                        .read(sessionRepositoryProvider)
-                                        .deleteAiEvent(event.id),
-                                  ),
-                                  loading: () => const Center(
-                                    child: CircularProgressIndicator(
-                                      color: AppColors.media,
-                                    ),
-                                  ),
-                                  error: (e, _) => const Center(
-                                    child: Text(
-                                      'Error loading events',
-                                      style: TextStyle(color: AppColors.error),
-                                    ),
-                                  ),
-                                )
-                          : const EventFeed(events: []),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Bottom controls
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.paddingL,
-                  vertical: AppDimensions.paddingS,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _MediaControlButton(
-                      icon: sessionState.isMuted
-                          ? Icons.mic_off
-                          : Icons.mic,
-                      label: sessionState.isMuted ? 'Unmute' : 'Mute',
-                      color: AppColors.media,
-                      onTap: () => ref
-                          .read(activeSessionProvider.notifier)
-                          .toggleMute(),
-                    ),
-                    // Hold-to-talk + Capture column
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTapDown: (_) {
-                            ref
-                                .read(activeSessionProvider.notifier)
-                                .startInteractiveTurn();
-                          },
-                          onTapUp: (_) {
-                            ref
-                                .read(activeSessionProvider.notifier)
-                                .finishInteractiveTurn();
-                          },
-                          onTapCancel: () {
-                            ref
-                                .read(activeSessionProvider.notifier)
-                                .finishInteractiveTurn();
-                          },
-                          child: Container(
-                            width: 64,
-                            height: 64,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: isHolding
-                                  ? AppGradients.mediaGradient
-                                  : null,
-                              color: isHolding
-                                  ? null
-                                  : AppColors.media.withValues(alpha: 0.15),
-                              border: Border.all(
-                                color: AppColors.media.withValues(
-                                  alpha: isHolding ? 0.8 : 0.3,
-                                ),
-                                width: 2,
-                              ),
-                            ),
-                            child: Icon(
-                              isHolding ? Icons.mic : Icons.mic_none,
-                              color: isHolding ? Colors.white : AppColors.media,
-                              size: 28,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _MediaControlButton(
-                          icon: _selectedCapture == 'photo'
-                              ? Icons.camera
-                              : _selectedCapture == 'video'
-                              ? Icons.videocam
-                              : Icons.upload_file,
-                          label: sessionState.isProcessing
-                              ? 'Working...'
-                              : 'Capture',
-                          color: AppColors.media,
-                          isLarge: true,
-                          onTap: _handleCapture,
-                        ),
-                      ],
-                    ),
-                    _MediaControlButton(
-                      icon: Icons.stop_circle,
-                      label: 'End',
-                      color: AppColors.error,
-                      onTap: () => _endSession(context),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ),
           if (_isEnding)
             Container(
               color: Colors.black54,
@@ -389,10 +149,46 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
     );
   }
 
-  Future<void> _handleCapture() async {
+  Future<void> _handleToolRequestPhoto() async {
+    final request = await showModalBottomSheet<MediaCaptureRequest>(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppDimensions.radiusL),
+        ),
+      ),
+      builder: (context) => const _PhotoPickerSheet(),
+    );
+    if (request == null || !mounted) return;
+
     await ref
         .read(activeSessionProvider.notifier)
-        .captureMedia(_selectedCapture);
+        .captureMedia(request);
+  }
+
+  Future<void> _handleToolRequestPdf() async {
+    await ref.read(activeSessionProvider.notifier).captureMedia(
+      const MediaCaptureRequest(
+        captureType: 'pdf',
+        source: MediaCaptureSource.filePicker,
+      ),
+    );
+  }
+
+  Future<void> _handleCapture() async {
+    final request = await showModalBottomSheet<MediaCaptureRequest>(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppDimensions.radiusL),
+        ),
+      ),
+      builder: (context) => const _CaptureActionSheet(),
+    );
+    if (request == null || !mounted) return;
+    await ref.read(activeSessionProvider.notifier).captureMedia(request);
   }
 
   Future<void> _endSession(BuildContext context) async {
@@ -409,141 +205,547 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
   }
 }
 
-class _MediaAttachmentCard extends StatelessWidget {
-  final SessionMediaItem item;
+// ── Conversation View ────────────────────────────────────────────
 
-  const _MediaAttachmentCard({required this.item});
+class _ConversationView extends StatelessWidget {
+  final List<ConversationEntry> entries;
+  final ScrollController scrollController;
+  final RealtimeVoiceStatus voiceStatus;
+
+  const _ConversationView({
+    required this.entries,
+    required this.scrollController,
+    required this.voiceStatus,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final icon = switch (item.attachment.type) {
-      MediaType.photo => Icons.photo_camera_back,
-      MediaType.video => Icons.videocam,
-      MediaType.file => Icons.attach_file,
-    };
-
-    return Container(
-      padding: const EdgeInsets.all(AppDimensions.paddingM),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-        border: Border.all(color: AppColors.media.withValues(alpha: 0.18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    if (entries.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimensions.paddingXL),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: AppColors.media, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  item.attachment.type.name.toUpperCase(),
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: AppColors.media,
-                    fontWeight: FontWeight.w700,
-                  ),
+              Icon(
+                voiceStatus == RealtimeVoiceStatus.connecting
+                    ? Icons.wifi_calling_3
+                    : voiceStatus == RealtimeVoiceStatus.disconnected
+                        ? Icons.mic_off_outlined
+                        : Icons.graphic_eq_rounded,
+                color: AppColors.media.withValues(alpha: 0.5),
+                size: 36,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                voiceStatus == RealtimeVoiceStatus.connecting
+                    ? 'Connecting to voice assistant...'
+                    : voiceStatus == RealtimeVoiceStatus.disconnected
+                        ? 'Starting session...'
+                        : 'Voice assistant is ready.\nSpeak or add media to get started.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
                 ),
               ),
-              if (item.isAnalyzing)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
             ],
           ),
-          if (item.localPath != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              item.localPath!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      controller: scrollController,
+      padding: const EdgeInsets.fromLTRB(
+        AppDimensions.paddingM,
+        AppDimensions.paddingS,
+        AppDimensions.paddingM,
+        AppDimensions.paddingS,
+      ),
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _ConversationBubble(entry: entry),
+        );
+      },
+    );
+  }
+}
+
+// ── Conversation Bubble ──────────────────────────────────────────
+
+class _ConversationBubble extends StatelessWidget {
+  final ConversationEntry entry;
+
+  const _ConversationBubble({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = entry.role == ConversationRole.user;
+    final isToolRequest = entry.type == ConversationEntryType.toolRequest;
+    final isMedia = entry.type == ConversationEntryType.mediaAttachment;
+
+    if (isToolRequest) {
+      return _buildToolRequestBubble(context);
+    }
+
+    if (isMedia) {
+      return _buildMediaBubble(context, isUser);
+    }
+
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.78,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: isUser
+              ? AppColors.surface
+              : AppColors.media.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(AppDimensions.radiusM),
+            topRight: const Radius.circular(AppDimensions.radiusM),
+            bottomLeft: Radius.circular(
+              isUser ? AppDimensions.radiusM : 4,
             ),
-          ],
-          if (item.signedUrl != null &&
-              item.attachment.type == MediaType.photo) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-              child: Image.network(
-                item.signedUrl!,
-                height: 120,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 120,
-                  color: AppColors.surface,
-                  child: const Center(
-                    child: Icon(Icons.broken_image, color: AppColors.textSecondary),
-                  ),
-                ),
+            bottomRight: Radius.circular(
+              isUser ? 4 : AppDimensions.radiusM,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              entry.text,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _formatTime(entry.timestamp),
+              style: const TextStyle(
+                color: AppColors.textTertiary,
+                fontSize: 10,
               ),
             ),
           ],
-          if (item.analysis?.trim().isNotEmpty ?? false) ...[
-            const SizedBox(height: 8),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolRequestBubble(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.media.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        border: Border.all(color: AppColors.media.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            entry.toolRequest?.toolName == 'request_pdf'
+                ? Icons.picture_as_pdf_outlined
+                : Icons.add_a_photo_outlined,
+            color: AppColors.media,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              entry.text,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMediaBubble(BuildContext context, bool isUser) {
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+          border: Border.all(color: AppColors.media.withValues(alpha: 0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              entry.text.toLowerCase().contains('pdf')
+                  ? Icons.picture_as_pdf_outlined
+                  : Icons.photo_outlined,
+              color: AppColors.media,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
             Text(
-              item.analysis!,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppColors.textPrimary),
+              entry.text,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+// ── Voice State Indicator ────────────────────────────────────────
+
+class _VoiceStateIndicator extends StatelessWidget {
+  final RealtimeVoiceStatus voiceStatus;
+  final double audioLevel;
+  final SessionConversationState conversationState;
+
+  const _VoiceStateIndicator({
+    required this.voiceStatus,
+    required this.audioLevel,
+    required this.conversationState,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (voiceStatus == RealtimeVoiceStatus.disconnected) {
+      return const SizedBox(height: 16);
+    }
+
+    final isListening = voiceStatus == RealtimeVoiceStatus.connected ||
+        voiceStatus == RealtimeVoiceStatus.listening;
+    final isSpeaking = voiceStatus == RealtimeVoiceStatus.aiSpeaking ||
+        conversationState == SessionConversationState.aiSpeaking;
+    final isConnecting = voiceStatus == RealtimeVoiceStatus.connecting;
+
+    final label = isConnecting
+        ? 'Connecting...'
+        : isSpeaking
+            ? 'AI Speaking'
+            : conversationState == SessionConversationState.processing
+                ? 'Processing...'
+                : 'Listening';
+
+    final orbSize = 48.0 + (isListening ? audioLevel * 16.0 : 0.0);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Glow ring
+                if (!isConnecting)
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: orbSize + 20,
+                    height: orbSize + 20,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.media.withValues(
+                            alpha: isSpeaking ? 0.3 : 0.15,
+                          ),
+                          blurRadius: isSpeaking ? 24 : 12,
+                          spreadRadius: isSpeaking ? 4 : 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                // Main orb
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: orbSize,
+                  height: orbSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        AppColors.media.withValues(alpha: 0.7),
+                        AppColors.media.withValues(alpha: 0.3),
+                      ],
+                    ),
+                  ),
+                  child: isConnecting
+                      ? const Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          isSpeaking
+                              ? Icons.graphic_eq_rounded
+                              : Icons.mic,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                )
+                    .animate(
+                      onPlay: (controller) => controller.repeat(),
+                    )
+                    .then(delay: Duration.zero)
+                    .shimmer(
+                      duration: isSpeaking
+                          ? const Duration(milliseconds: 1200)
+                          : const Duration(milliseconds: 2400),
+                      color: AppColors.media.withValues(alpha: 0.15),
+                    ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: AppColors.media.withValues(alpha: 0.8),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _CapturePill extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
+// ── Tool Request Card ────────────────────────────────────────────
 
-  const _CapturePill({
-    required this.icon,
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
+class _ToolRequestCard extends StatelessWidget {
+  final ToolCallRequest request;
+  final VoidCallback onAddPhoto;
+  final VoidCallback onAddPdf;
+  final VoidCallback onDismiss;
+
+  const _ToolRequestCard({
+    required this.request,
+    required this.onAddPhoto,
+    required this.onAddPdf,
+    required this.onDismiss,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
+    final isImageRequest = request.toolName == 'request_image';
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppDimensions.paddingM,
+        0,
+        AppDimensions.paddingM,
+        AppDimensions.paddingS,
+      ),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        border: Border.all(color: AppColors.media.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isImageRequest
+                    ? Icons.add_a_photo_outlined
+                    : Icons.picture_as_pdf_outlined,
+                color: AppColors.media,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  request.reason.isNotEmpty
+                      ? request.reason
+                      : isImageRequest
+                          ? 'I need a photo to help you.'
+                          : 'I need a PDF document.',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: isImageRequest ? onAddPhoto : onAddPdf,
+                  icon: Icon(
+                    isImageRequest ? Icons.camera_alt_outlined : Icons.upload_file_outlined,
+                    size: 16,
+                  ),
+                  label: Text(isImageRequest ? 'Add Photo' : 'Add PDF'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.media,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    textStyle: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                onPressed: onDismiss,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textSecondary,
+                  side: const BorderSide(
+                    color: AppColors.divider,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                ),
+                child: const Text('Dismiss', style: TextStyle(fontSize: 13)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    )
+        .animate()
+        .fadeIn(duration: const Duration(milliseconds: 300))
+        .slideY(begin: 0.2, end: 0);
+  }
+}
+
+// ── Error Banner ─────────────────────────────────────────────────
+
+class _ErrorBanner extends StatelessWidget {
+  final String message;
+
+  const _ErrorBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppDimensions.paddingM,
+        AppDimensions.paddingS,
+        AppDimensions.paddingM,
+        0,
+      ),
+      padding: const EdgeInsets.all(AppDimensions.paddingS),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Bottom Controls ──────────────────────────────────────────────
+
+class _BottomControls extends StatelessWidget {
+  final bool isMuted;
+  final bool isProcessing;
+  final VoidCallback onToggleMute;
+  final VoidCallback onAddMedia;
+  final VoidCallback onEnd;
+
+  const _BottomControls({
+    required this.isMuted,
+    required this.isProcessing,
+    required this.onToggleMute,
+    required this.onAddMedia,
+    required this.onEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.fromLTRB(
+            AppDimensions.paddingL,
+            AppDimensions.paddingM,
+            AppDimensions.paddingL,
+            AppDimensions.paddingS,
+          ),
           decoration: BoxDecoration(
-            color: isSelected
-                ? AppColors.media.withValues(alpha: 0.2)
-                : AppColors.surface,
-            borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-            border: Border.all(
-              color: isSelected ? AppColors.media : AppColors.divider,
+            color: AppColors.surface.withValues(alpha: 0.7),
+            border: Border(
+              top: BorderSide(
+                color: AppColors.divider.withValues(alpha: 0.5),
+              ),
             ),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isSelected ? AppColors.media : AppColors.textSecondary,
+              _ControlButton(
+                icon: isMuted ? Icons.mic_off_outlined : Icons.mic_none,
+                label: isMuted ? 'Unmute' : 'Mute',
+                color: isMuted ? AppColors.error : AppColors.media,
+                onTap: onToggleMute,
               ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? AppColors.media : AppColors.textSecondary,
-                ),
+              _ControlButton(
+                icon: Icons.add_photo_alternate_outlined,
+                label: 'Add Media',
+                color: AppColors.media,
+                onTap: isProcessing ? null : onAddMedia,
+                isLarge: true,
+              ),
+              _ControlButton(
+                icon: Icons.stop_circle_outlined,
+                label: 'End',
+                color: AppColors.error,
+                onTap: onEnd,
               ),
             ],
           ),
@@ -553,24 +755,24 @@ class _CapturePill extends StatelessWidget {
   }
 }
 
-class _MediaControlButton extends StatelessWidget {
+class _ControlButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
+  final VoidCallback? onTap;
   final bool isLarge;
-  final VoidCallback onTap;
 
-  const _MediaControlButton({
+  const _ControlButton({
     required this.icon,
     required this.label,
     required this.color,
-    this.isLarge = false,
     required this.onTap,
+    this.isLarge = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final size = isLarge ? 72.0 : 56.0;
+    final size = isLarge ? 56.0 : 48.0;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -580,19 +782,249 @@ class _MediaControlButton extends StatelessWidget {
             width: size,
             height: size,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
+              color: color.withValues(alpha: onTap == null ? 0.06 : 0.15),
               shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: color.withValues(alpha: onTap == null ? 0.1 : 0.3),
+              ),
             ),
-            child: Icon(icon, color: color, size: isLarge ? 36 : 28),
+            child: Icon(
+              icon,
+              color: onTap == null
+                  ? color.withValues(alpha: 0.4)
+                  : color,
+              size: isLarge ? 26 : 22,
+            ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          style: TextStyle(
+            fontSize: 11,
+            color: onTap == null
+                ? AppColors.textTertiary
+                : AppColors.textSecondary,
+          ),
         ),
       ],
+    );
+  }
+}
+
+// ── Capture Action Sheet (3 options) ─────────────────────────────
+
+class _CaptureActionSheet extends StatelessWidget {
+  const _CaptureActionSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppDimensions.paddingM,
+          10,
+          AppDimensions.paddingM,
+          AppDimensions.paddingM,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+              ),
+            ),
+            const SizedBox(height: AppDimensions.paddingM),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Add media',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Share a photo or document with the voice assistant.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
+            ),
+            const SizedBox(height: AppDimensions.paddingM),
+            const _CaptureActionTile(
+              icon: Icons.camera_alt_outlined,
+              title: 'Take photo',
+              subtitle: 'Open the camera to capture an image.',
+              request: MediaCaptureRequest(
+                captureType: 'photo',
+                source: MediaCaptureSource.camera,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const _CaptureActionTile(
+              icon: Icons.photo_library_outlined,
+              title: 'Upload photo',
+              subtitle: 'Choose an existing image from your library.',
+              request: MediaCaptureRequest(
+                captureType: 'photo',
+                source: MediaCaptureSource.gallery,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const _CaptureActionTile(
+              icon: Icons.picture_as_pdf_outlined,
+              title: 'Upload PDF',
+              subtitle: 'Share a PDF document for analysis.',
+              request: MediaCaptureRequest(
+                captureType: 'pdf',
+                source: MediaCaptureSource.filePicker,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Photo Picker Sheet (for tool call image requests) ────────────
+
+class _PhotoPickerSheet extends StatelessWidget {
+  const _PhotoPickerSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppDimensions.paddingM,
+          10,
+          AppDimensions.paddingM,
+          AppDimensions.paddingM,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+              ),
+            ),
+            const SizedBox(height: AppDimensions.paddingM),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Add a photo',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppDimensions.paddingM),
+            const _CaptureActionTile(
+              icon: Icons.camera_alt_outlined,
+              title: 'Take photo',
+              subtitle: 'Open the camera.',
+              request: MediaCaptureRequest(
+                captureType: 'photo',
+                source: MediaCaptureSource.camera,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const _CaptureActionTile(
+              icon: Icons.photo_library_outlined,
+              title: 'Upload photo',
+              subtitle: 'Choose from your library.',
+              request: MediaCaptureRequest(
+                captureType: 'photo',
+                source: MediaCaptureSource.gallery,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Capture Action Tile ──────────────────────────────────────────
+
+class _CaptureActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final MediaCaptureRequest request;
+
+  const _CaptureActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.request,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface.withValues(alpha: 0.65),
+      borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        onTap: () => Navigator.of(context).pop(request),
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimensions.paddingM),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.media.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: AppColors.media, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

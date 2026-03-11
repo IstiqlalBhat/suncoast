@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 import '../../../../shared/models/activity_model.dart';
@@ -17,6 +18,9 @@ import '../../../../services/audio/audio_recording_service.dart';
 import '../../../../services/conversation/elevenlabs_conversation_service.dart';
 import '../../../../services/media/camera_service.dart';
 import '../../../../services/media/media_upload_service.dart';
+import '../../../../services/media/openai_realtime_media_service.dart';
+import '../../../../services/voice/openai_realtime_voice_service.dart';
+import '../models/conversation_entry.dart';
 import '../../../dashboard/data/repositories/activity_repository.dart';
 import '../../../dashboard/presentation/providers/dashboard_provider.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
@@ -51,7 +55,24 @@ final mediaUploadServiceProvider = Provider<MediaUploadService>((ref) {
   return MediaUploadService(ref.watch(supabaseClientProvider));
 });
 
+final openAiRealtimeMediaServiceProvider = Provider<OpenAiRealtimeMediaService>(
+  (ref) {
+    return OpenAiRealtimeMediaService(apiClient: ref.watch(apiClientProvider));
+  },
+);
+
 enum SessionConversationState { idle, userSpeaking, processing, aiSpeaking }
+
+enum RealtimeVoiceStatus { disconnected, connecting, connected, listening, aiSpeaking }
+
+enum MediaCaptureSource { camera, gallery, filePicker }
+
+class MediaCaptureRequest {
+  final String captureType;
+  final MediaCaptureSource source;
+
+  const MediaCaptureRequest({required this.captureType, required this.source});
+}
 
 class SessionMediaItem {
   final MediaAttachmentModel attachment;
@@ -59,6 +80,7 @@ class SessionMediaItem {
   final String? localPath;
   final String? analysis;
   final bool isAnalyzing;
+  final Uint8List? previewBytes;
 
   const SessionMediaItem({
     required this.attachment,
@@ -66,6 +88,7 @@ class SessionMediaItem {
     this.localPath,
     this.analysis,
     this.isAnalyzing = false,
+    this.previewBytes,
   });
 
   SessionMediaItem copyWith({
@@ -74,6 +97,7 @@ class SessionMediaItem {
     String? localPath,
     String? analysis,
     bool? isAnalyzing,
+    Uint8List? previewBytes,
   }) {
     return SessionMediaItem(
       attachment: attachment ?? this.attachment,
@@ -81,8 +105,16 @@ class SessionMediaItem {
       localPath: localPath ?? this.localPath,
       analysis: analysis ?? this.analysis,
       isAnalyzing: isAnalyzing ?? this.isAnalyzing,
+      previewBytes: previewBytes ?? this.previewBytes,
     );
   }
+}
+
+class _MediaUploadResult {
+  final MediaAttachmentModel attachment;
+  final String? signedUrl;
+
+  const _MediaUploadResult({required this.attachment, this.signedUrl});
 }
 
 final activeSessionProvider =
@@ -96,6 +128,7 @@ final activeSessionProvider =
         audioPlaybackService: ref.watch(audioPlaybackServiceProvider),
         cameraService: ref.watch(cameraServiceProvider),
         mediaUploadService: ref.watch(mediaUploadServiceProvider),
+        realtimeMediaService: ref.watch(openAiRealtimeMediaServiceProvider),
         readSettings: () => ref.read(settingsProvider).valueOrNull,
         readCurrentUserId: () => supabase.auth.currentUser?.id ?? '',
       );
@@ -119,6 +152,9 @@ class ActiveSessionState {
   final List<Map<String, dynamic>> referenceCards;
   final List<SessionMediaItem> mediaItems;
   final bool isConversationActive;
+  final RealtimeVoiceStatus voiceStatus;
+  final ToolCallRequest? activeToolRequest;
+  final List<ConversationEntry> conversationEntries;
 
   const ActiveSessionState({
     this.session,
@@ -136,6 +172,9 @@ class ActiveSessionState {
     this.referenceCards = const [],
     this.mediaItems = const [],
     this.isConversationActive = false,
+    this.voiceStatus = RealtimeVoiceStatus.disconnected,
+    this.activeToolRequest,
+    this.conversationEntries = const [],
   });
 
   ActiveSessionState copyWith({
@@ -154,6 +193,9 @@ class ActiveSessionState {
     List<Map<String, dynamic>>? referenceCards,
     List<SessionMediaItem>? mediaItems,
     bool? isConversationActive,
+    RealtimeVoiceStatus? voiceStatus,
+    Object? activeToolRequest = _unset,
+    List<ConversationEntry>? conversationEntries,
   }) {
     return ActiveSessionState(
       session: session ?? this.session,
@@ -173,6 +215,11 @@ class ActiveSessionState {
       referenceCards: referenceCards ?? this.referenceCards,
       mediaItems: mediaItems ?? this.mediaItems,
       isConversationActive: isConversationActive ?? this.isConversationActive,
+      voiceStatus: voiceStatus ?? this.voiceStatus,
+      activeToolRequest: identical(activeToolRequest, _unset)
+          ? this.activeToolRequest
+          : activeToolRequest as ToolCallRequest?,
+      conversationEntries: conversationEntries ?? this.conversationEntries,
     );
   }
 }
@@ -185,6 +232,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   final AudioPlaybackService _audioPlaybackService;
   final CameraService _cameraService;
   final MediaUploadService _mediaUploadService;
+  final OpenAiRealtimeMediaService _realtimeMediaService;
   final UserSettingsModel? Function() _readSettings;
   final String Function() _readCurrentUserId;
   final _logger = Logger();
@@ -200,6 +248,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   final List<int> _interactiveAudioBuffer = [];
   String _lastProcessedTranscript = '';
   bool _isAiProcessing = false;
+  Completer<void>? _aiProcessingCompleter;
   bool _playbackInitialized = false;
 
   // ElevenLabs Conversational AI
@@ -210,6 +259,17 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   StreamSubscription<bool>? _convAgentSpeakingSub;
   StreamSubscription<String>? _convErrorSub;
 
+  // OpenAI Realtime Voice (media mode)
+  OpenAiRealtimeVoiceService? _voiceService;
+  StreamSubscription<VoiceSessionStatus>? _voiceStatusSub;
+  StreamSubscription<ToolCallRequest>? _voiceToolCallSub;
+  StreamSubscription<String>? _voiceUserTranscriptSub;
+  StreamSubscription<String>? _voiceAiTranscriptSub;
+  StreamSubscription<bool>? _voiceAiSpeakingSub;
+  StreamSubscription<String>? _voiceErrorSub;
+  StreamSubscription<List<int>>? _voiceAudioSub;
+  int _voiceSampleRate = 24000;
+
   ActiveSessionNotifier({
     required SessionRepository repository,
     required ActivityRepository activityRepository,
@@ -218,6 +278,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     required AudioPlaybackService audioPlaybackService,
     required CameraService cameraService,
     required MediaUploadService mediaUploadService,
+    required OpenAiRealtimeMediaService realtimeMediaService,
     required UserSettingsModel? Function() readSettings,
     required String Function() readCurrentUserId,
   }) : _repository = repository,
@@ -227,6 +288,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
        _audioPlaybackService = audioPlaybackService,
        _cameraService = cameraService,
        _mediaUploadService = mediaUploadService,
+       _realtimeMediaService = realtimeMediaService,
        _readSettings = readSettings,
        _readCurrentUserId = readCurrentUserId,
        super(const ActiveSessionState());
@@ -287,6 +349,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           _startAudioPipeline();
         } else if (mode == SessionMode.chat) {
           _startConversation();
+        } else if (mode == SessionMode.media) {
+          unawaited(_startRealtimeVoiceSession());
         }
       },
       failure: (message, _) {
@@ -376,35 +440,31 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         }
       });
 
-      _convUserTranscriptSub =
-          _conversationService!.userTranscriptStream.listen((transcript) {
-        if (!mounted || state.session == null) return;
-        final updated = [
-          state.transcript,
-          'User: $transcript',
-        ].where((s) => s.trim().isNotEmpty).join('\n');
-        _setStateIfMounted((current) => current.copyWith(transcript: updated));
-        _repository.updateTranscript(state.session!.id, updated);
-      });
+      _convUserTranscriptSub = _conversationService!.userTranscriptStream
+          .listen((transcript) {
+            if (!mounted || state.session == null) return;
+            final updated = _appendTranscriptLine('User: $transcript');
+            _setStateIfMounted(
+              (current) => current.copyWith(transcript: updated),
+            );
+            _repository.updateTranscript(state.session!.id, updated);
+          });
 
-      _convAgentResponseSub =
-          _conversationService!.agentResponseStream.listen((response) {
+      _convAgentResponseSub = _conversationService!.agentResponseStream.listen((
+        response,
+      ) {
         if (!mounted || state.session == null) return;
-        final updated = [
-          state.transcript,
-          'AI: $response',
-        ].where((s) => s.trim().isNotEmpty).join('\n');
+        final updated = _appendTranscriptLine('AI: $response');
         _setStateIfMounted(
-          (current) => current.copyWith(
-            transcript: updated,
-            aiResponse: response,
-          ),
+          (current) =>
+              current.copyWith(transcript: updated, aiResponse: response),
         );
         _repository.updateTranscript(state.session!.id, updated);
       });
 
-      _convAgentSpeakingSub =
-          _conversationService!.agentSpeakingStream.listen((speaking) {
+      _convAgentSpeakingSub = _conversationService!.agentSpeakingStream.listen((
+        speaking,
+      ) {
         if (!mounted) return;
         _setStateIfMounted(
           (current) => current.copyWith(
@@ -415,8 +475,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         );
       });
 
-      _convErrorSub =
-          _conversationService!.errorStream.listen((error) {
+      _convErrorSub = _conversationService!.errorStream.listen((error) {
         if (!mounted) return;
         _logger.e('Conversation error: $error');
         _setStateIfMounted((current) => current.copyWith(error: error));
@@ -425,7 +484,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       // Connect to ElevenLabs
       await _conversationService!.start(
         sessionId: state.session!.id,
-        activityContext: state.activityContext,
+        activityContext: _buildSessionContext(),
       );
 
       // Start mic and pipe audio to the conversation service
@@ -448,7 +507,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       );
       _logger.i('ElevenLabs conversation started successfully');
     } catch (e) {
-      _logger.e('Failed to start conversation, falling back to push-to-talk: $e');
+      _logger.e(
+        'Failed to start conversation, falling back to push-to-talk: $e',
+      );
       _setStateIfMounted(
         (current) => current.copyWith(
           isConversationActive: false,
@@ -545,6 +606,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     final previousTranscript = _lastProcessedTranscript;
     _lastProcessedTranscript = transcript;
     _isAiProcessing = true;
+    _aiProcessingCompleter = Completer<void>();
 
     try {
       state = state.copyWith(isProcessing: true);
@@ -565,6 +627,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       state = state.copyWith(isProcessing: false);
     } finally {
       _isAiProcessing = false;
+      _aiProcessingCompleter?.complete();
+      _aiProcessingCompleter = null;
     }
   }
 
@@ -678,10 +742,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         return null;
       }
 
-      final updatedTranscript = [
-        state.transcript,
-        'User: $transcriptText',
-      ].where((value) => value.trim().isNotEmpty).join('\n');
+      final updatedTranscript = _appendTranscriptLine('User: $transcriptText');
 
       state = state.copyWith(transcript: updatedTranscript);
       await _repository.updateTranscript(state.session!.id, updatedTranscript);
@@ -690,7 +751,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         'chat',
         data: {
           'message': transcriptText,
-          'sessionContext': '${state.activityContext}\n\n$updatedTranscript',
+          'sessionContext': _buildSessionContext(
+            transcriptOverride: updatedTranscript,
+          ),
           'sessionId': state.session!.id,
         },
       );
@@ -704,7 +767,10 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
       final transcriptWithAi = aiMessage.isEmpty
           ? updatedTranscript
-          : '$updatedTranscript\nAI: $aiMessage';
+          : _appendTranscriptLine(
+              'AI: $aiMessage',
+              transcriptOverride: updatedTranscript,
+            );
 
       state = state.copyWith(
         transcript: transcriptWithAi,
@@ -743,115 +809,205 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
   }
 
-  Future<void> captureMedia(String captureType) async {
+  Future<void> captureMedia(MediaCaptureRequest request) async {
     if (state.session == null) return;
 
-    state = state.copyWith(isProcessing: true, error: null);
+    state = state.copyWith(
+      isProcessing: true,
+      error: null,
+      conversationState: SessionConversationState.processing,
+    );
 
     try {
-      final file = await _pickMediaFile(captureType);
+      final file = await _pickMediaFile(request);
       if (file == null) {
-        state = state.copyWith(isProcessing: false);
+        state = state.copyWith(
+          isProcessing: false,
+          conversationState: SessionConversationState.idle,
+        );
         return;
       }
 
-      final storagePath = await _mediaUploadService.uploadMedia(
+      // If voice session is active, inject media into the voice conversation
+      if (_voiceService != null && _voiceService!.isConnected) {
+        final type = request.captureType == 'pdf' ? 'pdf' : 'image';
+        await handleToolCallMediaResponse(file, type);
+        state = state.copyWith(
+          isProcessing: false,
+          conversationState: SessionConversationState.idle,
+        );
+        return;
+      }
+
+      final mimeType = _inferMimeType(file, request.captureType);
+      final resolvedCaptureType = _resolveCaptureType(
+        request.captureType,
+        mimeType,
+      );
+      final mediaType = _parseMediaType(resolvedCaptureType);
+      final fileSizeBytes = await file.length();
+      final previewBytes = await _loadPreviewBytes(file, mimeType);
+      final shouldAnalyzeImage = mimeType.startsWith('image/');
+      final pendingAttachmentId =
+          'pending-${DateTime.now().microsecondsSinceEpoch}';
+      final analysisBytes = shouldAnalyzeImage
+          ? (previewBytes ?? await file.readAsBytes())
+          : null;
+      var activeMediaItemId = pendingAttachmentId;
+
+      state = state.copyWith(
+        mediaItems: [
+          ...state.mediaItems,
+          SessionMediaItem(
+            attachment: MediaAttachmentModel(
+              id: pendingAttachmentId,
+              sessionId: state.session!.id,
+              type: mediaType,
+              storagePath: '',
+              mimeType: mimeType,
+              fileSizeBytes: fileSizeBytes,
+              analysisStatus: shouldAnalyzeImage ? 'processing' : 'uploading',
+              metadata: {'local_path': file.path, 'pending': true},
+            ),
+            localPath: file.path,
+            isAnalyzing: shouldAnalyzeImage,
+            previewBytes: previewBytes,
+          ),
+        ],
+      );
+
+      final realtimeAnalysisFuture = shouldAnalyzeImage && analysisBytes != null
+          ? _streamRealtimePhotoAnalysis(
+              imageBytes: analysisBytes,
+              mimeType: mimeType,
+              mediaItemId: () => activeMediaItemId,
+            )
+          : Future<String?>.value(null);
+
+      final uploadResult = await _uploadCapturedMedia(
         file: file,
         sessionId: state.session!.id,
-        type: captureType,
+        mediaType: mediaType,
+        captureType: resolvedCaptureType,
+        mimeType: mimeType,
+        fileSizeBytes: fileSizeBytes,
+        source: request.source.name,
       );
 
-      if (storagePath == null) {
+      if (uploadResult == null) {
+        _updateMediaItem(
+          activeMediaItemId,
+          (item) => item.copyWith(
+            attachment: item.attachment.copyWith(analysisStatus: 'failed'),
+            isAnalyzing: false,
+            analysis: item.analysis?.trim().isNotEmpty == true
+                ? item.analysis
+                : 'Upload failed. Try again.',
+          ),
+        );
         state = state.copyWith(
           isProcessing: false,
+          conversationState: SessionConversationState.idle,
           error: 'Failed to upload media',
         );
+        unawaited(realtimeAnalysisFuture.catchError((_) => null));
         return;
       }
 
-      final mimeType = _inferMimeType(file, captureType);
-      final attachmentResult = await _repository.createMediaAttachment(
-        sessionId: state.session!.id,
-        type: _parseMediaType(captureType),
-        storagePath: storagePath,
-        mimeType: mimeType,
-        fileSizeBytes: await file.length(),
-        metadata: {'local_path': file.path},
-      );
-
-      final attachment = attachmentResult.dataOrNull;
-      if (attachment == null) {
-        state = state.copyWith(
-          isProcessing: false,
-          error: 'Failed to save media attachment',
-        );
-        return;
-      }
-
-      final signedUrl = await _mediaUploadService.createSignedUrl(storagePath);
+      activeMediaItemId = uploadResult.attachment.id;
+      final existingAnalysis = state.mediaItems
+          .where((item) => item.attachment.id == pendingAttachmentId)
+          .map((item) => item.analysis)
+          .firstOrNull;
       final initialItem = SessionMediaItem(
-        attachment: attachment,
-        signedUrl: signedUrl,
+        attachment: uploadResult.attachment,
+        signedUrl: uploadResult.signedUrl,
         localPath: file.path,
-        isAnalyzing: captureType == 'photo',
+        analysis: existingAnalysis,
+        isAnalyzing: shouldAnalyzeImage,
+        previewBytes: previewBytes,
       );
-      state = state.copyWith(
-        mediaItems: [...state.mediaItems, initialItem],
-        isProcessing: false,
-      );
+      _replaceMediaItem(pendingAttachmentId, initialItem);
 
-      if (captureType == 'photo') {
-        final analysis = await _analyzePhoto(file, attachment.id, mimeType);
+      if (shouldAnalyzeImage) {
+        final analysis = await realtimeAnalysisFuture;
         if (analysis != null) {
-          state = state.copyWith(aiResponse: analysis);
+          await _persistRealtimePhotoAnalysis(
+            attachmentId: uploadResult.attachment.id,
+            analysis: analysis,
+          );
+          state = state.copyWith(
+            aiResponse: analysis,
+            isProcessing: false,
+            conversationState: SessionConversationState.idle,
+          );
+          unawaited(_speakMediaAssistantResponse(analysis));
+          return;
+        }
+
+        final fallbackAnalysis = await _analyzePhoto(
+          imageBytes: analysisBytes!,
+          attachmentId: uploadResult.attachment.id,
+          mimeType: mimeType,
+        );
+        if (fallbackAnalysis != null) {
+          state = state.copyWith(aiResponse: fallbackAnalysis);
+          unawaited(_speakMediaAssistantResponse(fallbackAnalysis));
         }
       } else {
-        await _repository.updateMediaAttachment(attachment.id, {
-          'ai_analysis': captureType == 'video'
+        await _repository.updateMediaAttachment(uploadResult.attachment.id, {
+          'ai_analysis': resolvedCaptureType == 'video'
               ? 'Video uploaded for later review.'
               : 'Attachment uploaded and ready for review.',
           'analysis_status': 'skipped',
         });
         _updateMediaItem(
-          attachment.id,
+          uploadResult.attachment.id,
           (item) => item.copyWith(
             attachment: item.attachment.copyWith(analysisStatus: 'skipped'),
-            analysis: captureType == 'video'
+            analysis: resolvedCaptureType == 'video'
                 ? 'Video uploaded for later review.'
                 : 'Attachment uploaded and ready for review.',
             isAnalyzing: false,
           ),
         );
       }
+
+      state = state.copyWith(
+        isProcessing: false,
+        conversationState: SessionConversationState.idle,
+      );
     } catch (e) {
       _logger.e('Capture media failed: $e');
       state = state.copyWith(
         isProcessing: false,
+        conversationState: SessionConversationState.idle,
         error: 'Failed to capture media',
       );
     }
   }
 
-  Future<File?> _pickMediaFile(String captureType) {
-    switch (captureType) {
-      case 'photo':
+  Future<File?> _pickMediaFile(MediaCaptureRequest request) {
+    switch ((request.captureType, request.source)) {
+      case ('photo', MediaCaptureSource.camera):
         return _cameraService.takePhoto();
-      case 'video':
-        return _cameraService.recordVideo();
-      case 'file':
+      case ('photo', MediaCaptureSource.gallery):
+        return _cameraService.pickImage();
+      case ('pdf', MediaCaptureSource.filePicker):
+        return _cameraService.pickPdf();
+      case ('file', MediaCaptureSource.filePicker):
         return _cameraService.pickFile();
       default:
         return Future.value(null);
     }
   }
 
-  Future<String?> _analyzePhoto(
-    File file,
-    String attachmentId,
-    String mimeType,
-  ) async {
+  Future<String?> _analyzePhoto({
+    required List<int> imageBytes,
+    required String attachmentId,
+    required String mimeType,
+  }) async {
     try {
-      final imageBytes = await file.readAsBytes();
       final response = await _apiClient.callFunction(
         'analyzeImage',
         data: {
@@ -865,6 +1021,10 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       );
 
       final analysis = (response['analysis'] as String? ?? '').trim();
+      if (analysis.isEmpty) {
+        throw StateError('Image analysis returned empty content');
+      }
+
       final updatedAttachment = await _repository.updateMediaAttachment(
         attachmentId,
         {'ai_analysis': analysis, 'analysis_status': 'completed'},
@@ -897,6 +1057,495 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
   }
 
+  Future<void> _startRealtimeVoiceSession() async {
+    if (state.session == null) return;
+
+    _setStateIfMounted(
+      (current) => current.copyWith(
+        voiceStatus: RealtimeVoiceStatus.connecting,
+      ),
+    );
+
+    try {
+      // Get ephemeral token from Firebase
+      final response = await _apiClient.callFunction(
+        'createRealtimeMediaSession',
+        data: {
+          'sessionId': state.session!.id,
+          'activityContext': state.activityContext,
+        },
+      );
+
+      final clientSecret = (response['clientSecret'] as String? ?? '').trim();
+      final model = (response['model'] as String? ?? 'gpt-4o-realtime-preview').trim();
+      final instructions = (response['instructions'] as String? ?? '').trim();
+
+      if (clientSecret.isEmpty) {
+        throw StateError('No client secret returned');
+      }
+
+      // Configure audio session for playAndRecord
+      final audioSession = await AudioSession.instance;
+      await audioSession.configure(AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.defaultToSpeaker |
+            AVAudioSessionCategoryOptions.allowBluetooth,
+        avAudioSessionMode: AVAudioSessionMode.voiceChat,
+      ));
+
+      _voiceService = OpenAiRealtimeVoiceService();
+
+      // Subscribe to voice events
+      _voiceStatusSub = _voiceService!.statusStream.listen((status) {
+        if (!mounted) return;
+        if (status == VoiceSessionStatus.disconnected ||
+            status == VoiceSessionStatus.error) {
+          _setStateIfMounted(
+            (current) => current.copyWith(
+              voiceStatus: RealtimeVoiceStatus.disconnected,
+              conversationState: SessionConversationState.idle,
+            ),
+          );
+        }
+      });
+
+      _voiceToolCallSub = _voiceService!.toolCallStream.listen((toolCall) {
+        if (!mounted) return;
+        _addConversationEntry(ConversationEntry(
+          id: 'tool-${DateTime.now().microsecondsSinceEpoch}',
+          role: ConversationRole.ai,
+          type: ConversationEntryType.toolRequest,
+          text: toolCall.reason,
+          timestamp: DateTime.now(),
+          toolRequest: toolCall,
+        ));
+        _setStateIfMounted(
+          (current) => current.copyWith(activeToolRequest: toolCall),
+        );
+      });
+
+      final userTranscriptBuffer = StringBuffer();
+      _voiceUserTranscriptSub = _voiceService!.userTranscriptStream.listen((text) {
+        if (!mounted || state.session == null) return;
+        userTranscriptBuffer.write(text);
+        final fullText = userTranscriptBuffer.toString().trim();
+        if (fullText.isNotEmpty) {
+          _addConversationEntry(ConversationEntry(
+            id: 'user-${DateTime.now().microsecondsSinceEpoch}',
+            role: ConversationRole.user,
+            type: ConversationEntryType.text,
+            text: fullText,
+            timestamp: DateTime.now(),
+          ));
+          final updated = _appendTranscriptLine('User: $fullText');
+          _setStateIfMounted((current) => current.copyWith(transcript: updated));
+          _repository.updateTranscript(state.session!.id, updated);
+          userTranscriptBuffer.clear();
+        }
+      });
+
+      final aiTranscriptBuffer = StringBuffer();
+      _voiceAiTranscriptSub = _voiceService!.aiTranscriptStream.listen((text) {
+        if (!mounted || state.session == null) return;
+        aiTranscriptBuffer.write(text);
+        // Finalize on sentence boundaries or after a pause
+      });
+
+      _voiceAiSpeakingSub = _voiceService!.aiSpeakingStream.listen((speaking) {
+        if (!mounted) return;
+        _setStateIfMounted(
+          (current) => current.copyWith(
+            conversationState: speaking
+                ? SessionConversationState.aiSpeaking
+                : SessionConversationState.idle,
+            voiceStatus: speaking
+                ? RealtimeVoiceStatus.aiSpeaking
+                : RealtimeVoiceStatus.listening,
+          ),
+        );
+        // When AI stops speaking, flush accumulated transcript
+        if (!speaking && aiTranscriptBuffer.isNotEmpty) {
+          final fullText = aiTranscriptBuffer.toString().trim();
+          if (fullText.isNotEmpty) {
+            _addConversationEntry(ConversationEntry(
+              id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
+              role: ConversationRole.ai,
+              type: ConversationEntryType.text,
+              text: fullText,
+              timestamp: DateTime.now(),
+            ));
+            final updated = _appendTranscriptLine('AI: $fullText');
+            _setStateIfMounted(
+              (current) => current.copyWith(
+                transcript: updated,
+                aiResponse: fullText,
+              ),
+            );
+            _repository.updateTranscript(state.session!.id, updated);
+          }
+          aiTranscriptBuffer.clear();
+        }
+      });
+
+      _voiceErrorSub = _voiceService!.errorStream.listen((error) {
+        if (!mounted) return;
+        _logger.e('Voice session error: $error');
+        _setStateIfMounted((current) => current.copyWith(error: error));
+      });
+
+      // Connect to OpenAI Realtime
+      await _voiceService!.connect(
+        clientSecret: clientSecret,
+        model: model,
+        instructions: instructions,
+      );
+
+      // Start mic and pipe audio to voice service
+      final hasPermission = await _audioService.hasPermission();
+      if (!hasPermission) {
+        throw Exception('Microphone permission required');
+      }
+
+      _ensureAmplitudeSubscription();
+
+      // Try 24kHz first, fall back to 16kHz
+      try {
+        final stream = _audioService.startStream(sampleRate: 24000);
+        _voiceSampleRate = 24000;
+        _voiceAudioSub = stream.listen((chunk) {
+          if (!state.isMuted &&
+              state.conversationState != SessionConversationState.aiSpeaking) {
+            _voiceService?.sendAudioChunk(chunk);
+          }
+        });
+      } catch (e) {
+        _logger.w('24kHz not supported, falling back to 16kHz: $e');
+        final stream = _audioService.startStream(sampleRate: 16000);
+        _voiceSampleRate = 16000;
+        _voiceAudioSub = stream.listen((chunk) {
+          if (!state.isMuted &&
+              state.conversationState != SessionConversationState.aiSpeaking) {
+            _voiceService?.sendAudioChunk(chunk);
+          }
+        });
+      }
+
+      _setStateIfMounted(
+        (current) => current.copyWith(
+          voiceStatus: RealtimeVoiceStatus.connected,
+          isConversationActive: true,
+        ),
+      );
+      _logger.i('Realtime voice session started (sampleRate=$_voiceSampleRate)');
+    } catch (e) {
+      _logger.e('Failed to start realtime voice session: $e');
+      _setStateIfMounted(
+        (current) => current.copyWith(
+          voiceStatus: RealtimeVoiceStatus.disconnected,
+          error: 'Voice assistant unavailable: $e',
+        ),
+      );
+      await _voiceService?.dispose();
+      _voiceService = null;
+    }
+  }
+
+  Future<void> handleToolCallMediaResponse(File file, String type) async {
+    if (state.session == null) return;
+    final toolCall = state.activeToolRequest;
+
+    _setStateIfMounted(
+      (current) => current.copyWith(
+        isProcessing: true,
+        activeToolRequest: null,
+      ),
+    );
+
+    try {
+      if (type == 'image') {
+        final bytes = await file.readAsBytes();
+        final mimeType = _inferMimeType(file, 'photo');
+
+        // Add to conversation entries immediately
+        _addConversationEntry(ConversationEntry(
+          id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+          role: ConversationRole.user,
+          type: ConversationEntryType.mediaAttachment,
+          text: 'Photo shared',
+          timestamp: DateTime.now(),
+        ));
+
+        // Use GPT-4o vision to analyze the image, then inject text into voice conversation
+        final analysisResponse = await _apiClient.callFunction(
+          'analyzeImage',
+          data: {
+            'image': base64Encode(bytes),
+            'context': state.activityContext,
+            'sessionId': state.session!.id,
+            'mimeType': mimeType,
+          },
+        );
+        final analysis = (analysisResponse['analysis'] as String? ?? '').trim();
+
+        if (analysis.isNotEmpty) {
+          _voiceService?.sendMediaContext(
+            textContent: 'The user just shared a photo. Here is the image analysis:\n$analysis',
+          );
+        }
+
+        // Submit tool result if this was a tool call
+        if (toolCall != null) {
+          _voiceService?.submitToolResult(
+            toolCall.callId,
+            '{"status": "image_analyzed", "analysis": ${jsonEncode(analysis)}}',
+          );
+        }
+      } else if (type == 'pdf') {
+        final bytes = await file.readAsBytes();
+        final base64Pdf = base64Encode(bytes);
+
+        // Extract text server-side
+        final result = await _apiClient.callFunction(
+          'extractPdfText',
+          data: {
+            'pdfBase64': base64Pdf,
+            'sessionId': state.session!.id,
+          },
+        );
+
+        final extractedText = (result['text'] as String? ?? '').trim();
+        final pageCount = result['pageCount'] as int? ?? 0;
+        final truncated = result['truncated'] as bool? ?? false;
+
+        if (extractedText.isNotEmpty) {
+          final pdfContext = [
+            'PDF Document ($pageCount pages${truncated ? ', truncated' : ''}):',
+            extractedText,
+          ].join('\n');
+
+          _voiceService?.sendMediaContext(textContent: pdfContext);
+        }
+
+        _addConversationEntry(ConversationEntry(
+          id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+          role: ConversationRole.user,
+          type: ConversationEntryType.mediaAttachment,
+          text: 'PDF shared ($pageCount pages)',
+          timestamp: DateTime.now(),
+        ));
+
+        if (toolCall != null) {
+          _voiceService?.submitToolResult(
+            toolCall.callId,
+            '{"status": "pdf_provided", "pages": $pageCount, "truncated": $truncated}',
+          );
+        }
+      }
+
+      // Upload to Supabase for record keeping
+      final mimeType = _inferMimeType(file, type == 'image' ? 'photo' : 'file');
+      final mediaType = type == 'image' ? MediaType.photo : MediaType.file;
+      final fileSizeBytes = await file.length();
+
+      unawaited(_uploadCapturedMedia(
+        file: file,
+        sessionId: state.session!.id,
+        mediaType: mediaType,
+        captureType: type == 'image' ? 'photo' : 'file',
+        mimeType: mimeType,
+        fileSizeBytes: fileSizeBytes,
+        source: 'tool_request',
+      ));
+    } catch (e) {
+      _logger.e('Failed to handle tool call media response: $e');
+      if (toolCall != null) {
+        _voiceService?.submitToolResult(
+          toolCall.callId,
+          '{"error": "Failed to process media: $e"}',
+        );
+      }
+    } finally {
+      _setStateIfMounted(
+        (current) => current.copyWith(isProcessing: false),
+      );
+    }
+  }
+
+  void dismissToolRequest() {
+    final toolCall = state.activeToolRequest;
+    if (toolCall == null) return;
+
+    _voiceService?.submitToolResult(
+      toolCall.callId,
+      '{"status": "dismissed", "reason": "User declined to provide media"}',
+    );
+
+    _setStateIfMounted(
+      (current) => current.copyWith(activeToolRequest: null),
+    );
+  }
+
+  void _addConversationEntry(ConversationEntry entry) {
+    _setStateIfMounted(
+      (current) => current.copyWith(
+        conversationEntries: [...current.conversationEntries, entry],
+      ),
+    );
+  }
+
+  Future<_MediaUploadResult?> _uploadCapturedMedia({
+    required File file,
+    required String sessionId,
+    required MediaType mediaType,
+    required String captureType,
+    required String mimeType,
+    required int fileSizeBytes,
+    required String source,
+  }) async {
+    final storagePath = await _mediaUploadService.uploadMedia(
+      file: file,
+      sessionId: sessionId,
+      type: captureType,
+      contentType: mimeType,
+    );
+
+    if (storagePath == null) {
+      return null;
+    }
+
+    final attachmentResult = await _repository.createMediaAttachment(
+      sessionId: sessionId,
+      type: mediaType,
+      storagePath: storagePath,
+      mimeType: mimeType,
+      fileSizeBytes: fileSizeBytes,
+      metadata: {
+        'local_path': file.path,
+        'source': source,
+        'original_name': file.path.split(Platform.pathSeparator).last,
+      },
+    );
+
+    final attachment = attachmentResult.dataOrNull;
+    if (attachment == null) {
+      return null;
+    }
+
+    final signedUrl = await _mediaUploadService.createSignedUrl(storagePath);
+    return _MediaUploadResult(attachment: attachment, signedUrl: signedUrl);
+  }
+
+  Future<String?> _streamRealtimePhotoAnalysis({
+    required List<int> imageBytes,
+    required String mimeType,
+    required String Function() mediaItemId,
+  }) async {
+    if (state.session == null) {
+      return null;
+    }
+
+    try {
+      final result = await _realtimeMediaService.analyzeImage(
+        sessionId: state.session!.id,
+        activityContext: state.activityContext,
+        imageBytes: imageBytes,
+        mimeType: mimeType,
+        promptContext: _buildSessionContext(),
+        onPartial: (partialText) {
+          _updateMediaItem(
+            mediaItemId(),
+            (item) => item.copyWith(analysis: partialText, isAnalyzing: true),
+          );
+        },
+      );
+
+      _updateMediaItem(
+        mediaItemId(),
+        (item) => item.copyWith(analysis: result.analysis, isAnalyzing: false),
+      );
+      return result.analysis;
+    } catch (e) {
+      _logger.e('Realtime photo analysis failed: $e');
+      _updateMediaItem(
+        mediaItemId(),
+        (item) => item.copyWith(isAnalyzing: false),
+      );
+      return null;
+    }
+  }
+
+  Future<void> _persistRealtimePhotoAnalysis({
+    required String attachmentId,
+    required String analysis,
+  }) async {
+    final attachmentResult = await _repository.updateMediaAttachment(
+      attachmentId,
+      {'ai_analysis': analysis, 'analysis_status': 'completed'},
+    );
+
+    final updatedAttachment = attachmentResult.dataOrNull;
+    _updateMediaItem(
+      attachmentId,
+      (item) => item.copyWith(
+        attachment:
+            updatedAttachment ??
+            item.attachment.copyWith(
+              aiAnalysis: analysis,
+              analysisStatus: 'completed',
+            ),
+        analysis: analysis,
+        isAnalyzing: false,
+      ),
+    );
+
+    final eventResult = await _repository.createAiEvent(
+      sessionId: state.session!.id,
+      type: AiEventType.observation,
+      content: analysis,
+      source: 'openai_realtime',
+      metadata: {
+        'source': 'openai_realtime_media',
+        'attachmentId': attachmentId,
+      },
+    );
+
+    if (eventResult.isFailure) {
+      _logger.w('Failed to persist realtime media event');
+    }
+  }
+
+  Future<void> _speakMediaAssistantResponse(String message) async {
+    final trimmedMessage = message.trim();
+    final settings = _readSettings();
+
+    if (trimmedMessage.isEmpty || !(settings?.voiceOutputEnabled ?? true)) {
+      return;
+    }
+
+    try {
+      await _preparePlayback();
+      _setStateIfMounted(
+        (current) => current.copyWith(
+          conversationState: SessionConversationState.aiSpeaking,
+        ),
+      );
+      await _audioPlaybackService.speak(trimmedMessage);
+    } catch (e) {
+      _logger.e('Realtime media TTS failed: $e');
+    } finally {
+      if (mounted) {
+        _setStateIfMounted(
+          (current) => current.copyWith(
+            conversationState: current.isProcessing
+                ? SessionConversationState.processing
+                : SessionConversationState.idle,
+          ),
+        );
+      }
+    }
+  }
+
   void _updateMediaItem(
     String attachmentId,
     SessionMediaItem Function(SessionMediaItem item) transform,
@@ -911,6 +1560,65 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     );
   }
 
+  void _replaceMediaItem(String attachmentId, SessionMediaItem replacement) {
+    state = state.copyWith(
+      mediaItems: state.mediaItems
+          .map(
+            (item) => item.attachment.id == attachmentId ? replacement : item,
+          )
+          .toList(),
+    );
+  }
+
+  String _appendTranscriptLine(String line, {String? transcriptOverride}) {
+    final currentTranscript = (transcriptOverride ?? state.transcript).trim();
+    final trimmedLine = line.trim();
+
+    return [
+      if (currentTranscript.isNotEmpty) currentTranscript,
+      if (trimmedLine.isNotEmpty) trimmedLine,
+    ].join('\n');
+  }
+
+  String _buildSessionContext({String? transcriptOverride}) {
+    final contextSections = <String>[state.activityContext];
+    final transcript = (transcriptOverride ?? state.transcript).trim();
+
+    if (transcript.isNotEmpty) {
+      contextSections.add('Conversation history:\n$transcript');
+    }
+
+    final mediaInsights = state.mediaItems
+        .map((item) {
+          final analysis = (item.analysis ?? item.attachment.aiAnalysis ?? '')
+              .trim();
+          if (analysis.isEmpty) {
+            return null;
+          }
+
+          final label = switch (item.attachment.type) {
+            MediaType.photo => 'Image finding',
+            MediaType.video => 'Video note',
+            MediaType.file => 'File note',
+          };
+
+          return '$label: $analysis';
+        })
+        .whereType<String>()
+        .toList();
+
+    if (mediaInsights.isNotEmpty) {
+      final recentInsights = mediaInsights.length <= 3
+          ? mediaInsights
+          : mediaInsights.sublist(mediaInsights.length - 3);
+      contextSections.add(
+        'Recent media findings:\n${recentInsights.join('\n\n')}',
+      );
+    }
+
+    return contextSections.join('\n\n');
+  }
+
   MediaType _parseMediaType(String captureType) {
     return switch (captureType) {
       'photo' => MediaType.photo,
@@ -921,17 +1629,64 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   String _inferMimeType(File file, String captureType) {
     final extension = file.path.split('.').last.toLowerCase();
-    return switch (captureType) {
-      'photo' => 'image/${extension == 'jpg' ? 'jpeg' : extension}',
-      'video' => 'video/$extension',
-      _ => switch (extension) {
-        'pdf' => 'application/pdf',
-        'doc' => 'application/msword',
-        'docx' =>
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        _ => 'application/octet-stream',
-      },
+    final normalizedExtension = extension == 'jpg' ? 'jpeg' : extension;
+
+    if ({
+      'jpeg',
+      'png',
+      'webp',
+      'heic',
+      'heif',
+      'gif',
+      'bmp',
+    }.contains(normalizedExtension)) {
+      return 'image/$normalizedExtension';
+    }
+
+    if ({'mp4', 'mov', 'm4v', 'webm', 'avi'}.contains(normalizedExtension)) {
+      if (normalizedExtension == 'mov') {
+        return 'video/quicktime';
+      }
+      return 'video/$normalizedExtension';
+    }
+
+    return switch (normalizedExtension) {
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' =>
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'txt' => 'text/plain',
+      'csv' => 'text/csv',
+      _ =>
+        captureType == 'photo'
+            ? 'image/jpeg'
+            : captureType == 'video'
+            ? 'video/mp4'
+            : 'application/octet-stream',
     };
+  }
+
+  String _resolveCaptureType(String captureType, String mimeType) {
+    if (mimeType.startsWith('image/')) {
+      return 'photo';
+    }
+    if (mimeType.startsWith('video/')) {
+      return 'video';
+    }
+    return captureType;
+  }
+
+  Future<Uint8List?> _loadPreviewBytes(File file, String mimeType) async {
+    if (!mimeType.startsWith('image/')) {
+      return null;
+    }
+
+    try {
+      return await file.readAsBytes();
+    } catch (e) {
+      _logger.w('Failed to read preview bytes: $e');
+      return null;
+    }
   }
 
   /// Send a chat message (for two-way chat mode)
@@ -944,11 +1699,14 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         conversationState: SessionConversationState.processing,
       );
 
+      final transcriptWithUser = _appendTranscriptLine('User: $message');
       final response = await _apiClient.callFunction(
         'chat',
         data: {
           'message': message,
-          'sessionContext': '${state.activityContext}\n\n${state.transcript}',
+          'sessionContext': _buildSessionContext(
+            transcriptOverride: transcriptWithUser,
+          ),
           'sessionId': state.session!.id,
         },
       );
@@ -958,14 +1716,20 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
           .toList();
+      final transcriptWithAi = aiMessage.trim().isEmpty
+          ? transcriptWithUser
+          : _appendTranscriptLine(
+              'AI: $aiMessage',
+              transcriptOverride: transcriptWithUser,
+            );
       state = state.copyWith(
         isProcessing: false,
         conversationState: SessionConversationState.idle,
         aiResponse: aiMessage,
         referenceCards: referenceCards,
-        transcript: '${state.transcript}\nUser: $message\nAI: $aiMessage'
-            .trim(),
+        transcript: transcriptWithAi,
       );
+      await _repository.updateTranscript(state.session!.id, transcriptWithAi);
 
       return aiMessage;
     } catch (e) {
@@ -1012,6 +1776,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
     // Stop ElevenLabs conversation if active
     await _stopConversation();
+    // Stop voice session if active
+    await _stopVoiceSession();
 
     // Stop audio pipeline
     _transcriptionTimer?.cancel();
@@ -1028,6 +1794,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     if (_audioBuffer.isNotEmpty) {
       await _sendAudioChunk();
     }
+
+    // Wait for any in-flight AI processing to finish
+    await _aiProcessingCompleter?.future;
 
     // Process final transcript with AI if needed
     if (state.transcript.isNotEmpty &&
@@ -1070,6 +1839,25 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     state = state.copyWith(transcript: '${state.transcript} $text'.trim());
   }
 
+  Future<void> _stopVoiceSession() async {
+    await _voiceStatusSub?.cancel();
+    await _voiceToolCallSub?.cancel();
+    await _voiceUserTranscriptSub?.cancel();
+    await _voiceAiTranscriptSub?.cancel();
+    await _voiceAiSpeakingSub?.cancel();
+    await _voiceErrorSub?.cancel();
+    await _voiceAudioSub?.cancel();
+    _voiceStatusSub = null;
+    _voiceToolCallSub = null;
+    _voiceUserTranscriptSub = null;
+    _voiceAiTranscriptSub = null;
+    _voiceAiSpeakingSub = null;
+    _voiceErrorSub = null;
+    _voiceAudioSub = null;
+    await _voiceService?.stop();
+    _voiceService = null;
+  }
+
   Future<void> _stopConversation() async {
     await _convStatusSub?.cancel();
     await _convUserTranscriptSub?.cancel();
@@ -1089,10 +1877,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     try {
       await _apiClient.callFunction(
         'syncActivityStatus',
-        data: {
-          'sessionId': sessionId,
-          'status': status,
-        },
+        data: {'sessionId': sessionId, 'status': status},
       );
     } catch (error) {
       _logger.e(
@@ -1103,6 +1888,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   void reset() {
     _stopConversation();
+    _stopVoiceSession();
+    _realtimeMediaService.disconnect();
     _timer?.cancel();
     _transcriptionTimer?.cancel();
     _audioStreamSub?.cancel();
@@ -1126,7 +1913,10 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   @override
   void dispose() {
     _stopConversation();
+    _stopVoiceSession();
+    _voiceService?.dispose();
     _conversationService?.dispose();
+    _realtimeMediaService.dispose();
     _timer?.cancel();
     _transcriptionTimer?.cancel();
     _audioStreamSub?.cancel();

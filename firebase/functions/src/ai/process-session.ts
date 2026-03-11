@@ -13,7 +13,6 @@ const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
 type TranscriptEvent = {
   type?: string;
   content?: string;
-  confidence?: number;
 };
 
 type ProcessTranscriptResponse = {
@@ -48,21 +47,41 @@ export const processTranscript = onCall(
 
     const model = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
 
-    const prompt = `You are an AI assistant for field workers. Analyze the following transcript from a field session and extract structured observations.
+    const prompt = `You are an AI assistant for field sessions. Analyze the following transcript from a field session and extract ONLY operationally meaningful events.
 
 Activity Context: ${activityContext || "General field work"}
 
 Transcript:
 ${transcript}
 
-Extract the following as a JSON array of events. Each event should have:
+Extract events as a JSON array. Each event should have:
 - "type": one of "observation", "lookup", or "action"
-- "content": a concise description
-- "confidence": a number between 0 and 1
+- "content": a concise, self-contained description
 
-Observations: Things the worker noted or described about the environment, equipment, or conditions.
-Lookups: Information requests, references to documents, or data the worker mentioned needing.
-Actions: Tasks completed, decisions made, or steps taken during the session.
+QUALITY RULES:
+Transcripts often contain greetings, small talk, filler, thinking out loud, and casual conversation between people. Do NOT create events for any of these. Only create events that would be useful to someone reviewing the session log who was not present.
+
+If the transcript contains no meaningful operational content, return an empty array: { "events": [] }
+
+IMPORTANT: Evaluate statements in the context of the full conversation. If a person says something brief like "looks good" or "that's fine" right after discussing a specific item or task, that IS a meaningful confirmation — log it as an observation with enough context to stand on its own (e.g., "Confirmed [the thing discussed] is in acceptable condition").
+
+OBSERVATION — A specific finding, condition, measurement, procedure, limitation, or requirement noticed or stated on site.
+  Create when a person describes something concrete about their activity.
+  When a person describes HOW they did something (the method) and WHAT they found (the result), those are two separate observations — do not merge them.
+  When a person states what something can or cannot do, or is or is not designed for, that is its own observation.
+  When a person states a rule or prerequisite, capture it even if it sounds like general knowledge.
+  If something is repeated or emphasized, it is important.
+  Skip when there is nothing specific being referenced.
+
+ACTION — A specific task completed, started, or decided with a clear outcome.
+  Create when a person names what they did or will do concretely.
+  Skip when someone expresses vague intent without naming the actual task.
+
+LOOKUP — A specific request for information, procedures, data, or contacts.
+  Create when a person asks about something specific they need for their activity.
+  Skip for conversational questions or questions about the AI.
+
+Write each event's content to be self-contained — someone reading just the event should understand what it refers to without needing the full transcript.
 
 Respond with ONLY valid JSON: { "events": [...] }`;
 
@@ -84,7 +103,6 @@ Respond with ONLY valid JSON: { "events": [...] }`;
           session_id: sessionId,
           type: event.type,
           content: event.content,
-          confidence: event.confidence || 0.8,
           metadata: {},
         }));
 

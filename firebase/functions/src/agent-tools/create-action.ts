@@ -60,7 +60,6 @@ export const agentCreateAction = onRequest(
         type: "action",
         content: description,
         status: normalizedStatus,
-        confidence: 0.9,
         metadata: {
           source: "elevenlabs_agent",
         },

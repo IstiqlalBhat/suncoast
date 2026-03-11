@@ -7,6 +7,8 @@ abstract final class ApiEndpoints {
   static const whisperProxy = '/whisperProxy';
   static const openaiTts = '/openaiTts';
   static const getSignedConversationUrl = '/getSignedConversationUrl';
+  static const createRealtimeMediaSession = '/createRealtimeMediaSession';
+  static const extractPdfText = '/extractPdfText';
 
   // Supabase Tables
   static const profilesTable = 'profiles';

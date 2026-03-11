@@ -5,6 +5,8 @@ admin.initializeApp();
 export { processTranscript } from "./ai/process-session";
 export { chat } from "./ai/chat";
 export { analyzeImage } from "./ai/vision";
+export { createRealtimeMediaSession } from "./ai/openai-realtime-session";
+export { extractPdfText } from "./ai/extract-pdf-text";
 export { generateSummary } from "./ai/summary";
 export { syncActivityStatus } from "./activities/sync-status";
 export { whisperProxy } from "./transcription/whisper-proxy";

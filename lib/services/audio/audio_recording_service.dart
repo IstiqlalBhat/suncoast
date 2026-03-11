@@ -40,16 +40,16 @@ class AudioRecordingService {
     }
   }
 
-  Stream<List<int>> startStream() async* {
+  Stream<List<int>> startStream({int sampleRate = 16000}) async* {
     try {
       if (!await hasPermission()) {
         throw Exception('Microphone permission not granted');
       }
 
       final stream = await _recorder.startStream(
-        const RecordConfig(
+        RecordConfig(
           encoder: AudioEncoder.pcm16bits,
-          sampleRate: 16000,
+          sampleRate: sampleRate,
           numChannels: 1,
         ),
       );

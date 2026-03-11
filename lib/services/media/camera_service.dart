@@ -39,16 +39,19 @@ class CameraService {
     }
   }
 
-  Future<File?> recordVideo() async {
+  Future<File?> pickPdf() async {
     try {
-      final video = await _imagePicker.pickVideo(
-        source: ImageSource.camera,
-        maxDuration: const Duration(minutes: 5),
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
       );
-      if (video == null) return null;
-      return File(video.path);
+      if (result == null || result.files.isEmpty) return null;
+      final path = result.files.first.path;
+      if (path == null) return null;
+      return File(path);
     } catch (e) {
-      _logger.e('Failed to record video: $e');
+      _logger.e('Failed to pick PDF: $e');
       return null;
     }
   }

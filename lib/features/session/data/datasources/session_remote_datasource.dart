@@ -110,9 +110,7 @@ class SessionRemoteDatasource {
 
       return SessionModel.fromJson(rows.first);
     } catch (e) {
-      throw ServerException(
-        'Failed to fetch latest completed session: $e',
-      );
+      throw ServerException('Failed to fetch latest completed session: $e');
     }
   }
 
@@ -156,6 +154,32 @@ class SessionRemoteDatasource {
       return AiEventModel.fromJson(response);
     } catch (e) {
       throw ServerException('Failed to update AI event: $e');
+    }
+  }
+
+  Future<AiEventModel> createAiEvent({
+    required String sessionId,
+    required AiEventType type,
+    required String content,
+    String source = 'ai',
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final response = await _supabase
+          .from(ApiEndpoints.aiEventsTable)
+          .insert({
+            'session_id': sessionId,
+            'type': type.name,
+            'content': content,
+            'source': source,
+            'metadata': metadata,
+          })
+          .select()
+          .single();
+
+      return AiEventModel.fromJson(response);
+    } catch (e) {
+      throw ServerException('Failed to create AI event: $e');
     }
   }
 

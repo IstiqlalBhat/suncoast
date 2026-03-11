@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
@@ -57,7 +57,49 @@ export const chat = onCall(
       messageLength: typeof message === "string" ? message.length : 0,
     });
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.1-pro-preview",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          required: ["message", "events", "referenceCards"],
+          properties: {
+            message: {
+              type: SchemaType.STRING,
+            },
+            events: {
+              type: SchemaType.ARRAY,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  type: { type: SchemaType.STRING },
+                  content: { type: SchemaType.STRING },
+                  status: { type: SchemaType.STRING },
+                  actionLabel: { type: SchemaType.STRING, nullable: true },
+                  externalRecordUrl: {
+                    type: SchemaType.STRING,
+                    nullable: true,
+                  },
+                },
+              },
+            },
+            referenceCards: {
+              type: SchemaType.ARRAY,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  type: { type: SchemaType.STRING },
+                  title: { type: SchemaType.STRING },
+                  content: { type: SchemaType.STRING },
+                  subtitle: { type: SchemaType.STRING, nullable: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
 
     const prompt = `You are FieldFlow AI, a helpful voice assistant for field workers. You help with inspections, assessments, and documentation.
 
@@ -65,7 +107,12 @@ Session Context: ${sessionContext || "General field session"}
 
 User said: "${message}"
 
-Respond conversationally and helpfully. Also extract any events (observations, lookups, actions) from the conversation.
+Treat the full session context as active working memory.
+- Maintain continuity across turns instead of answering each turn as a fresh conversation.
+- If the session context includes image or media findings, use those findings directly when they are relevant.
+- If the user asks a follow-up like "what about that" or "does it matter", resolve it using the session context before asking the user to repeat details.
+- Keep the spoken response concise and natural.
+- Also extract any events (observations, lookups, actions) from the conversation.
 
 Respond with JSON:
 {
@@ -93,18 +140,8 @@ Return valid JSON only.`;
 
     try {
       const result = await model.generateContent(prompt);
-      const text = result.response.text();
-
-      const jsonMatch = text.match(/\{[\s\S]*?\}(?=[^}]*$)/s) || text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return {
-          message: "I'm sorry, I had trouble processing that. Could you repeat?",
-          events: [],
-          referenceCards: [],
-        };
-      }
-
-      const parsed = JSON.parse(jsonMatch[0]) as ChatResponse;
+      const text = result.response.text().trim();
+      const parsed = JSON.parse(text) as ChatResponse;
 
       const events = Array.isArray(parsed.events) ? parsed.events : [];
 
@@ -117,7 +154,6 @@ Return valid JSON only.`;
           status: event.status || "completed",
           action_label: event.actionLabel || null,
           external_record_url: event.externalRecordUrl || null,
-          confidence: 0.85,
           metadata: {},
         }));
 

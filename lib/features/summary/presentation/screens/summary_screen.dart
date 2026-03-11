@@ -11,6 +11,7 @@ import '../../../../shared/widgets/gradient_button.dart';
 import '../../../dashboard/presentation/providers/dashboard_provider.dart';
 import '../../../history/presentation/providers/history_provider.dart';
 import '../providers/summary_provider.dart';
+import '../utils/summary_export.dart';
 
 class SummaryScreen extends ConsumerStatefulWidget {
   final String activityId;
@@ -53,6 +54,18 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       appBar: AppBar(
         title: const Text(AppStrings.sessionSummary),
         automaticallyImplyLeading: false,
+        actions: [
+          if (summaryAsync.valueOrNull != null)
+            IconButton(
+              icon: const Icon(Icons.share, color: AppColors.primary),
+              tooltip: 'Share summary',
+              onPressed: () => _showShareOptions(
+                summaryAsync.valueOrNull!,
+                activityTitle,
+                sessionDuration,
+              ),
+            ),
+        ],
       ),
       body: summaryAsync.when(
         data: (summary) {
@@ -552,6 +565,113 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     _updateSummaryField({
       'follow_ups': updated.map((f) => f.toJson()).toList(),
     });
+  }
+
+  // ── Share ────────────────────────────────────────────────────────────
+
+  void _showShareOptions(
+    SessionSummaryModel summary,
+    String activityTitle,
+    int? durationSeconds,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppDimensions.paddingM),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textTertiary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Share Summary',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(
+                  Icons.picture_as_pdf,
+                  color: AppColors.error,
+                ),
+                title: const Text('Share as PDF'),
+                subtitle: const Text('Formatted document'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareAs(
+                    summary: summary,
+                    activityTitle: activityTitle,
+                    durationSeconds: durationSeconds,
+                    asPdf: true,
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.description_outlined,
+                  color: AppColors.primary,
+                ),
+                title: const Text('Share as Markdown'),
+                subtitle: const Text('Plain text format'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareAs(
+                    summary: summary,
+                    activityTitle: activityTitle,
+                    durationSeconds: durationSeconds,
+                    asPdf: false,
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _shareAs({
+    required SessionSummaryModel summary,
+    required String activityTitle,
+    int? durationSeconds,
+    required bool asPdf,
+  }) async {
+    try {
+      if (asPdf) {
+        await SummaryExport.shareAsPdf(
+          summary: summary,
+          activityTitle: activityTitle,
+          durationSeconds: durationSeconds,
+        );
+      } else {
+        await SummaryExport.shareAsMarkdown(
+          summary: summary,
+          activityTitle: activityTitle,
+          durationSeconds: durationSeconds,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to share: $e')),
+      );
+    }
   }
 
   // ── Confirm & Close ─────────────────────────────────────────────────
