@@ -1,18 +1,8 @@
 abstract final class ApiEndpoints {
   // Firebase Function Endpoints
-  static const processTranscript = '/processTranscript';
-  static const chat = '/chat';
-  static const analyzeImage = '/analyzeImage';
-  static const generateSummary = '/generateSummary';
-  static const whisperProxy = '/whisperProxy';
   static const openaiTts = '/openaiTts';
-  static const getSignedConversationUrl = '/getSignedConversationUrl';
-  static const createRealtimeMediaSession = '/createRealtimeMediaSession';
-  static const extractPdfText = '/extractPdfText';
 
   // Supabase Tables
-  static const profilesTable = 'profiles';
-  static const organizationsTable = 'organizations';
   static const activitiesTable = 'activities';
   static const sessionsTable = 'sessions';
   static const aiEventsTable = 'ai_events';
@@ -22,5 +12,4 @@ abstract final class ApiEndpoints {
 
   // Supabase Storage Buckets
   static const mediaAttachmentsBucket = 'media-attachments';
-  static const avatarsBucket = 'avatars';
 }

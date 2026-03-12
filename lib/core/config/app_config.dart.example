@@ -12,6 +12,9 @@ abstract final class AppConfig {
   static const _firebaseFunctionsUrl = String.fromEnvironment(
     'FIREBASE_FUNCTIONS_URL',
   );
+  static const _whisperProxyUrl = String.fromEnvironment(
+    'WHISPER_PROXY_URL',
+  );
 
   static String get supabaseUrl =>
       _requireValue(key: 'SUPABASE_URL', value: _supabaseUrl);
@@ -24,9 +27,15 @@ abstract final class AppConfig {
     value: _firebaseFunctionsUrl,
   );
 
+  static String get whisperProxyUrl => _requireValue(
+    key: 'WHISPER_PROXY_URL',
+    value: _whisperProxyUrl,
+  );
+
   static void validate() {
     _validateUrl('SUPABASE_URL', supabaseUrl);
     _validateUrl('FIREBASE_FUNCTIONS_URL', firebaseFunctionsUrl);
+    _validateUrl('WHISPER_PROXY_URL', whisperProxyUrl);
   }
 
   static String _requireValue({required String key, required String value}) {
