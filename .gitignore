@@ -9,6 +9,12 @@ ios/Runner/GoogleService-Info.plist
 android/app/google-services.json
 lib/core/config/app_config.dart
 
+# Android signing
+android/key.properties
+android/app/release-keystore.jks
+*.jks
+*.keystore
+
 # Launch scripts
 run.sh
 run_*.sh
