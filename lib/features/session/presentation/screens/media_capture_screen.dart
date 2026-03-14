@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_colors.dart';
+import '../../../../core/theme/app_color_scheme.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../shared/models/session_model.dart';
 import '../../../../shared/widgets/session_app_bar.dart';
@@ -53,6 +53,7 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final sessionState = ref.watch(activeSessionProvider);
     final timerText = ref.watch(sessionTimerProvider);
 
@@ -65,14 +66,14 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
     });
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       extendBodyBehindAppBar: true,
       appBar: SessionAppBar(
         title: sessionState.activityTitle.isNotEmpty
             ? sessionState.activityTitle
             : 'Media Assistant',
         subtitle: timerText,
-        accentColor: AppColors.media,
+        accentColor: c.media,
         onEndSession: () => _endSession(context),
       ),
       body: Stack(
@@ -126,16 +127,16 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
           if (_isEnding)
             Container(
               color: Colors.black54,
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: AppColors.media),
-                    SizedBox(height: AppDimensions.paddingM),
+                    CircularProgressIndicator(color: c.media),
+                    const SizedBox(height: AppDimensions.paddingM),
                     Text(
                       'Ending session...',
                       style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: c.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
@@ -150,9 +151,10 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
   }
 
   Future<void> _handleToolRequestPhoto() async {
+    final c = context.colors;
     final request = await showModalBottomSheet<MediaCaptureRequest>(
       context: context,
-      backgroundColor: AppColors.card,
+      backgroundColor: c.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(AppDimensions.radiusL),
@@ -177,9 +179,10 @@ class _MediaCaptureScreenState extends ConsumerState<MediaCaptureScreen> {
   }
 
   Future<void> _handleCapture() async {
+    final c = context.colors;
     final request = await showModalBottomSheet<MediaCaptureRequest>(
       context: context,
-      backgroundColor: AppColors.card,
+      backgroundColor: c.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
           top: Radius.circular(AppDimensions.radiusL),
@@ -220,6 +223,8 @@ class _ConversationView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     if (entries.isEmpty) {
       return Center(
         child: Padding(
@@ -233,7 +238,7 @@ class _ConversationView extends StatelessWidget {
                     : voiceStatus == RealtimeVoiceStatus.disconnected
                         ? Icons.mic_off_outlined
                         : Icons.graphic_eq_rounded,
-                color: AppColors.media.withValues(alpha: 0.5),
+                color: c.media.withValues(alpha: 0.5),
                 size: 36,
               ),
               const SizedBox(height: 12),
@@ -244,8 +249,8 @@ class _ConversationView extends StatelessWidget {
                         ? 'Starting session...'
                         : 'Voice assistant is ready.\nSpeak or add media to get started.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
+                style: TextStyle(
+                  color: c.textSecondary,
                   fontSize: 14,
                 ),
               ),
@@ -284,16 +289,17 @@ class _ConversationBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final isUser = entry.role == ConversationRole.user;
     final isToolRequest = entry.type == ConversationEntryType.toolRequest;
     final isMedia = entry.type == ConversationEntryType.mediaAttachment;
 
     if (isToolRequest) {
-      return _buildToolRequestBubble(context);
+      return _buildToolRequestBubble(context, c);
     }
 
     if (isMedia) {
-      return _buildMediaBubble(context, isUser);
+      return _buildMediaBubble(context, c, isUser);
     }
 
     return Align(
@@ -305,8 +311,8 @@ class _ConversationBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: isUser
-              ? AppColors.surface
-              : AppColors.media.withValues(alpha: 0.12),
+              ? c.surface
+              : c.media.withValues(alpha: 0.12),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(AppDimensions.radiusM),
             topRight: const Radius.circular(AppDimensions.radiusM),
@@ -323,8 +329,8 @@ class _ConversationBubble extends StatelessWidget {
           children: [
             Text(
               entry.text,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: c.textPrimary,
                 fontSize: 14,
                 height: 1.4,
               ),
@@ -332,8 +338,8 @@ class _ConversationBubble extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               _formatTime(entry.timestamp),
-              style: const TextStyle(
-                color: AppColors.textTertiary,
+              style: TextStyle(
+                color: c.textTertiary,
                 fontSize: 10,
               ),
             ),
@@ -343,14 +349,14 @@ class _ConversationBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildToolRequestBubble(BuildContext context) {
+  Widget _buildToolRequestBubble(BuildContext context, AppColorScheme c) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.media.withValues(alpha: 0.08),
+        color: c.media.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-        border: Border.all(color: AppColors.media.withValues(alpha: 0.2)),
+        border: Border.all(color: c.media.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -358,15 +364,15 @@ class _ConversationBubble extends StatelessWidget {
             entry.toolRequest?.toolName == 'request_pdf'
                 ? Icons.picture_as_pdf_outlined
                 : Icons.add_a_photo_outlined,
-            color: AppColors.media,
+            color: c.media,
             size: 20,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               entry.text,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: c.textPrimary,
                 fontSize: 13,
                 fontStyle: FontStyle.italic,
               ),
@@ -377,15 +383,15 @@ class _ConversationBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildMediaBubble(BuildContext context, bool isUser) {
+  Widget _buildMediaBubble(BuildContext context, AppColorScheme c, bool isUser) {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: c.surface,
           borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-          border: Border.all(color: AppColors.media.withValues(alpha: 0.2)),
+          border: Border.all(color: c.media.withValues(alpha: 0.2)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -394,14 +400,14 @@ class _ConversationBubble extends StatelessWidget {
               entry.text.toLowerCase().contains('pdf')
                   ? Icons.picture_as_pdf_outlined
                   : Icons.photo_outlined,
-              color: AppColors.media,
+              color: c.media,
               size: 18,
             ),
             const SizedBox(width: 8),
             Text(
               entry.text,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: c.textPrimary,
                 fontSize: 13,
               ),
             ),
@@ -431,6 +437,8 @@ class _VoiceStateIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     if (voiceStatus == RealtimeVoiceStatus.disconnected) {
       return const SizedBox(height: 16);
     }
@@ -470,7 +478,7 @@ class _VoiceStateIndicator extends StatelessWidget {
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.media.withValues(
+                          color: c.media.withValues(
                             alpha: isSpeaking ? 0.3 : 0.15,
                           ),
                           blurRadius: isSpeaking ? 24 : 12,
@@ -488,8 +496,8 @@ class _VoiceStateIndicator extends StatelessWidget {
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
                       colors: [
-                        AppColors.media.withValues(alpha: 0.7),
-                        AppColors.media.withValues(alpha: 0.3),
+                        c.media.withValues(alpha: 0.7),
+                        c.media.withValues(alpha: 0.3),
                       ],
                     ),
                   ),
@@ -520,7 +528,7 @@ class _VoiceStateIndicator extends StatelessWidget {
                       duration: isSpeaking
                           ? const Duration(milliseconds: 1200)
                           : const Duration(milliseconds: 2400),
-                      color: AppColors.media.withValues(alpha: 0.15),
+                      color: c.media.withValues(alpha: 0.15),
                     ),
               ],
             ),
@@ -529,7 +537,7 @@ class _VoiceStateIndicator extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: AppColors.media.withValues(alpha: 0.8),
+              color: c.media.withValues(alpha: 0.8),
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -557,6 +565,7 @@ class _ToolRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final isImageRequest = request.toolName == 'request_image';
 
     return Container(
@@ -568,9 +577,9 @@ class _ToolRequestCard extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: c.card,
         borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-        border: Border.all(color: AppColors.media.withValues(alpha: 0.3)),
+        border: Border.all(color: c.media.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -581,7 +590,7 @@ class _ToolRequestCard extends StatelessWidget {
                 isImageRequest
                     ? Icons.add_a_photo_outlined
                     : Icons.picture_as_pdf_outlined,
-                color: AppColors.media,
+                color: c.media,
                 size: 20,
               ),
               const SizedBox(width: 10),
@@ -592,8 +601,8 @@ class _ToolRequestCard extends StatelessWidget {
                       : isImageRequest
                           ? 'I need a photo to help you.'
                           : 'I need a PDF document.',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
+                  style: TextStyle(
+                    color: c.textPrimary,
                     fontSize: 14,
                   ),
                 ),
@@ -612,8 +621,8 @@ class _ToolRequestCard extends StatelessWidget {
                   ),
                   label: Text(isImageRequest ? 'Add Photo' : 'Add PDF'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.media,
-                    foregroundColor: Colors.white,
+                    backgroundColor: c.media,
+                    foregroundColor: c.background,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     textStyle: const TextStyle(
                       fontSize: 13,
@@ -626,9 +635,9 @@ class _ToolRequestCard extends StatelessWidget {
               OutlinedButton(
                 onPressed: onDismiss,
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textSecondary,
-                  side: const BorderSide(
-                    color: AppColors.divider,
+                  foregroundColor: c.textSecondary,
+                  side: BorderSide(
+                    color: c.divider,
                   ),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -657,6 +666,8 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(
         AppDimensions.paddingM,
@@ -666,19 +677,19 @@ class _ErrorBanner extends StatelessWidget {
       ),
       padding: const EdgeInsets.all(AppDimensions.paddingS),
       decoration: BoxDecoration(
-        color: AppColors.error.withValues(alpha: 0.12),
+        color: c.error.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-        border: Border.all(color: AppColors.error.withValues(alpha: 0.28)),
+        border: Border.all(color: c.error.withValues(alpha: 0.28)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+          Icon(Icons.error_outline, color: c.error, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               message,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textPrimary,
+                    color: c.textPrimary,
                   ),
             ),
           ),
@@ -707,6 +718,8 @@ class _BottomControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return ClipRRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
@@ -718,10 +731,10 @@ class _BottomControls extends StatelessWidget {
             AppDimensions.paddingS,
           ),
           decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.7),
+            color: c.surface.withValues(alpha: 0.7),
             border: Border(
               top: BorderSide(
-                color: AppColors.divider.withValues(alpha: 0.5),
+                color: c.divider.withValues(alpha: 0.5),
               ),
             ),
           ),
@@ -731,20 +744,20 @@ class _BottomControls extends StatelessWidget {
               _ControlButton(
                 icon: isMuted ? Icons.mic_off_outlined : Icons.mic_none,
                 label: isMuted ? 'Unmute' : 'Mute',
-                color: isMuted ? AppColors.error : AppColors.media,
+                color: isMuted ? c.error : c.media,
                 onTap: onToggleMute,
               ),
               _ControlButton(
                 icon: Icons.add_photo_alternate_outlined,
                 label: 'Add Media',
-                color: AppColors.media,
+                color: c.media,
                 onTap: isProcessing ? null : onAddMedia,
                 isLarge: true,
               ),
               _ControlButton(
                 icon: Icons.stop_circle_outlined,
                 label: 'End',
-                color: AppColors.error,
+                color: c.error,
                 onTap: onEnd,
               ),
             ],
@@ -772,6 +785,7 @@ class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final size = isLarge ? 56.0 : 48.0;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -803,8 +817,8 @@ class _ControlButton extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             color: onTap == null
-                ? AppColors.textTertiary
-                : AppColors.textSecondary,
+                ? c.textTertiary
+                : c.textSecondary,
           ),
         ),
       ],
@@ -819,6 +833,8 @@ class _CaptureActionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -834,28 +850,28 @@ class _CaptureActionSheet extends StatelessWidget {
               width: 42,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.divider,
+                color: c.divider,
                 borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
               ),
             ),
             const SizedBox(height: AppDimensions.paddingM),
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'Add media',
                 style: TextStyle(
-                  color: AppColors.textPrimary,
+                  color: c.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
             const SizedBox(height: 4),
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'Share a photo or document with the voice assistant.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                style: TextStyle(color: c.textSecondary, fontSize: 13),
               ),
             ),
             const SizedBox(height: AppDimensions.paddingM),
@@ -902,6 +918,8 @@ class _PhotoPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -917,17 +935,17 @@ class _PhotoPickerSheet extends StatelessWidget {
               width: 42,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.divider,
+                color: c.divider,
                 borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
               ),
             ),
             const SizedBox(height: AppDimensions.paddingM),
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'Add a photo',
                 style: TextStyle(
-                  color: AppColors.textPrimary,
+                  color: c.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
                 ),
@@ -977,8 +995,10 @@ class _CaptureActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Material(
-      color: AppColors.surface.withValues(alpha: 0.65),
+      color: c.surface.withValues(alpha: 0.65),
       borderRadius: BorderRadius.circular(AppDimensions.radiusM),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppDimensions.radiusM),
@@ -991,10 +1011,10 @@ class _CaptureActionTile extends StatelessWidget {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: AppColors.media.withValues(alpha: 0.12),
+                  color: c.media.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: AppColors.media, size: 18),
+                child: Icon(icon, color: c.media, size: 18),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1003,8 +1023,8 @@ class _CaptureActionTile extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                      style: TextStyle(
+                        color: c.textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1012,15 +1032,15 @@ class _CaptureActionTile extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
+                      style: TextStyle(
+                        color: c.textSecondary,
                         fontSize: 12,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              Icon(Icons.chevron_right, color: c.textSecondary),
             ],
           ),
         ),

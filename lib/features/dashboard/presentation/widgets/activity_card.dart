@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_dimensions.dart';
+import '../../../../core/theme/app_color_scheme.dart';
 import '../../../../shared/models/activity_model.dart';
+import '../../../../shared/widgets/session_type_icon.dart';
 
 class ActivityCard extends StatelessWidget {
   final ActivityModel activity;
@@ -18,73 +18,62 @@ class ActivityCard extends StatelessWidget {
     this.onMarkCompleted,
   });
 
-  Color get _typeColor => switch (activity.type) {
-    ActivityType.passive => AppColors.passive,
-    ActivityType.twoway => AppColors.chat,
-    ActivityType.media => AppColors.media,
-  };
-
-  IconData get _typeIcon => switch (activity.type) {
-    ActivityType.passive => Icons.hearing,
-    ActivityType.twoway => Icons.chat_bubble_outline,
-    ActivityType.media => Icons.camera_alt_outlined,
-  };
-
-  IconData get _statusIcon => switch (activity.status) {
-    ActivityStatus.inProgress => Icons.play_circle_filled,
-    ActivityStatus.completed => Icons.check_circle,
-    ActivityStatus.cancelled => Icons.cancel,
-    ActivityStatus.pending => Icons.schedule,
-  };
-
-  Color get _statusColor => switch (activity.status) {
-    ActivityStatus.inProgress => AppColors.success,
-    ActivityStatus.completed => AppColors.info,
-    ActivityStatus.cancelled => AppColors.error,
-    ActivityStatus.pending => AppColors.warning,
-  };
-
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final isActive = activity.status == ActivityStatus.inProgress;
+    final blendStrength = isActive ? 0.18 : 0.10;
+
+    final typeColor = switch (activity.type) {
+      ActivityType.passive => c.passive,
+      ActivityType.twoway => c.chat,
+      ActivityType.media => c.media,
+    };
+
+    final statusColor = switch (activity.status) {
+      ActivityStatus.inProgress => c.success,
+      ActivityStatus.completed => c.info,
+      ActivityStatus.cancelled => c.error,
+      ActivityStatus.pending => c.warning,
+    };
 
     return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: AppDimensions.paddingM,
-        vertical: 4,
-      ),
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          colors: [
+            Color.lerp(c.card, typeColor, blendStrength)!,
+            Color.lerp(c.card, typeColor, 0.03)!,
+            c.card,
+          ],
+          stops: const [0.0, 0.25, 0.5],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
         border: isActive
-            ? Border.all(color: _typeColor.withValues(alpha: 0.4), width: 1)
+            ? Border.all(color: typeColor.withValues(alpha: 0.2))
             : null,
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           child: Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
             child: Row(
               children: [
-                // Type indicator with glow effect for active
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: _typeColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: _typeColor.withValues(alpha: isActive ? 0.4 : 0.1),
-                    ),
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: SessionTypeIcon(
+                    mode: activity.type.name,
+                    color: typeColor,
+                    size: 32,
                   ),
-                  child: Icon(_typeIcon, color: _typeColor, size: 22),
                 ),
                 const SizedBox(width: 14),
-
-                // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -92,7 +81,8 @@ class ActivityCard extends StatelessWidget {
                       Text(
                         activity.title,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
+                          color: c.textPrimary,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -100,53 +90,46 @@ class ActivityCard extends StatelessWidget {
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          // Type badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
+                          Text(
+                            activity.type.displayName,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: typeColor.withValues(alpha: 0.8),
                             ),
-                            decoration: BoxDecoration(
-                              color: _typeColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: Text(
-                              activity.type.displayName,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: _typeColor,
-                                letterSpacing: 0.3,
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Container(
+                              width: 3, height: 3,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: c.textTertiary.withValues(alpha: 0.4),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          // Status indicator
-                          Icon(_statusIcon, size: 12, color: _statusColor),
-                          const SizedBox(width: 3),
+                          Container(
+                            width: 6, height: 6,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: statusColor,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
                           Text(
                             activity.status.name,
                             style: TextStyle(
-                              fontSize: 10,
-                              color: _statusColor,
+                              fontSize: 11,
+                              color: statusColor.withValues(alpha: 0.8),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                           if (activity.location != null) ...[
                             const SizedBox(width: 8),
-                            const Icon(
-                              Icons.location_on_outlined,
-                              size: 12,
-                              color: AppColors.textTertiary,
-                            ),
-                            const SizedBox(width: 2),
                             Expanded(
                               child: Text(
                                 activity.location!,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.textTertiary,
-                                ),
+                                style: TextStyle(fontSize: 10, color: c.textTertiary),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -154,53 +137,10 @@ class ActivityCard extends StatelessWidget {
                           ],
                         ],
                       ),
-                      if (activity.status != ActivityStatus.completed &&
-                          onMarkCompleted != null) ...[
-                        const SizedBox(height: 8),
-                        InkWell(
-                          onTap: onMarkCompleted,
-                          borderRadius: BorderRadius.circular(999),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.success.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: AppColors.success.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.check_circle_outline,
-                                  size: 12,
-                                  color: AppColors.success,
-                                ),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Mark completed',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.success,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
-
                 const SizedBox(width: 8),
-
-                // Schedule & Arrow
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -208,82 +148,46 @@ class ActivityCard extends StatelessWidget {
                       Text(
                         DateFormat('MMM d').format(activity.scheduledAt!),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: AppColors.textTertiary,
+                          fontSize: 11, color: c.textTertiary,
                         ),
                       ),
                     const SizedBox(height: 6),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (onDelete != null)
-                          PopupMenuButton<String>(
-                            icon: const Icon(
-                              Icons.more_vert,
-                              size: 18,
-                              color: AppColors.textTertiary,
-                            ),
-                            color: AppColors.surface,
-                            onSelected: (value) {
-                              if (value == 'complete') {
-                                onMarkCompleted?.call();
-                              }
-                              if (value == 'delete') {
-                                onDelete!();
-                              }
-                            },
-                            itemBuilder: (context) {
-                              final items = <PopupMenuEntry<String>>[];
-
-                              if (activity.status != ActivityStatus.completed &&
-                                  onMarkCompleted != null) {
-                                items.add(
-                                  const PopupMenuItem<String>(
-                                    value: 'complete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.check_circle_outline,
-                                            color: AppColors.success),
-                                        SizedBox(width: 8),
-                                        Text('Mark completed'),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              items.add(
-                                const PopupMenuItem<String>(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete_outline,
-                                          color: AppColors.error),
-                                      SizedBox(width: 8),
-                                      Text('Delete activity'),
-                                    ],
-                                  ),
-                                ),
-                              );
-
-                              return items;
-                            },
-                          ),
-                        Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            color: _typeColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Icon(
-                            Icons.chevron_right,
-                            color: _typeColor,
-                            size: 16,
-                          ),
+                    if (onDelete != null)
+                      SizedBox(
+                        width: 28, height: 28,
+                        child: PopupMenuButton<String>(
+                          icon: Icon(Icons.more_horiz, size: 16,
+                            color: c.textTertiary.withValues(alpha: 0.6)),
+                          padding: EdgeInsets.zero,
+                          color: c.surface,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          onSelected: (value) {
+                            if (value == 'complete') onMarkCompleted?.call();
+                            if (value == 'delete') onDelete!();
+                          },
+                          itemBuilder: (context) {
+                            final c = context.colors;
+                            final items = <PopupMenuEntry<String>>[];
+                            if (activity.status != ActivityStatus.completed && onMarkCompleted != null) {
+                              items.add(PopupMenuItem<String>(
+                                value: 'complete',
+                                child: Row(children: [
+                                  Icon(Icons.check_circle_outline, color: c.success),
+                                  SizedBox(width: 8), Text('Mark completed'),
+                                ]),
+                              ));
+                            }
+                            items.add(PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Row(children: [
+                                Icon(Icons.delete_outline, color: c.error),
+                                SizedBox(width: 8), Text('Delete activity'),
+                              ]),
+                            ));
+                            return items;
+                          },
                         ),
-                      ],
-                    ),
+                      ),
                   ],
                 ),
               ],

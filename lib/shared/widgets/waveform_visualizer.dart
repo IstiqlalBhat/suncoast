@@ -1,16 +1,16 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
+import '../../core/theme/app_color_scheme.dart';
 import '../../core/constants/app_dimensions.dart';
 
 class WaveformVisualizer extends StatefulWidget {
-  final Color color;
+  final Color? color;
   final bool isActive;
   final double amplitude;
 
   const WaveformVisualizer({
     super.key,
-    this.color = AppColors.passive,
+    this.color,
     this.isActive = false,
     this.amplitude = 0.0,
   });
@@ -41,13 +41,15 @@ class _WaveformVisualizerState extends State<WaveformVisualizer>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final effectiveColor = widget.color ?? c.passive;
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
         return CustomPaint(
           size: const Size(double.infinity, AppDimensions.waveformHeight),
           painter: _WaveformPainter(
-            color: widget.color,
+            color: effectiveColor,
             isActive: widget.isActive,
             amplitude: widget.amplitude,
             random: _random,

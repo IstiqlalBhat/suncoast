@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
+import '../../core/theme/app_color_scheme.dart';
 
 class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final String? subtitle;
-  final Color accentColor;
+  final Color? accentColor;
   final VoidCallback? onEndSession;
   final List<Widget>? actions;
 
@@ -12,7 +12,7 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     required this.title,
     this.subtitle,
-    this.accentColor = AppColors.primary,
+    this.accentColor,
     this.onEndSession,
     this.actions,
   });
@@ -22,6 +22,8 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final accent = accentColor ?? c.primary;
     return AppBar(
       backgroundColor: Colors.transparent,
       leading: IconButton(
@@ -41,15 +43,15 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: accentColor,
+              color: accent,
             ),
           ),
           if (subtitle != null)
             Text(
               subtitle!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.textSecondary,
+                color: c.textSecondary,
               ),
             ),
         ],
@@ -59,10 +61,10 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
         if (onEndSession != null)
           TextButton(
             onPressed: () => _showEndSessionDialog(context),
-            child: const Text(
+            child: Text(
               'End',
               style: TextStyle(
-                color: AppColors.error,
+                color: c.error,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -72,6 +74,7 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   void _showEndSessionDialog(BuildContext context) {
+    final c = context.colors;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -87,9 +90,9 @@ class SessionAppBar extends StatelessWidget implements PreferredSizeWidget {
               Navigator.pop(ctx);
               onEndSession?.call();
             },
-            child: const Text(
+            child: Text(
               'End Session',
-              style: TextStyle(color: AppColors.error),
+              style: TextStyle(color: c.error),
             ),
           ),
         ],

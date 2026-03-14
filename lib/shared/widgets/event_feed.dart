@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
+import '../../core/theme/app_color_scheme.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../shared/models/ai_event_model.dart';
 import 'event_feed_row.dart';
@@ -75,10 +75,11 @@ class _EventFeedState extends State<EventFeed> {
   }
 
   Future<bool?> _confirmDelete(BuildContext context) {
+    final c = context.colors;
     return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
+        backgroundColor: context.colors.card,
         title: const Text('Delete Event'),
         content: const Text(
           'This will permanently delete this event.',
@@ -90,7 +91,7 @@ class _EventFeedState extends State<EventFeed> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            style: TextButton.styleFrom(foregroundColor: c.error),
             child: const Text('Delete'),
           ),
         ],
@@ -100,6 +101,7 @@ class _EventFeedState extends State<EventFeed> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     if (widget.events.isEmpty) {
       return Center(
         child: Column(
@@ -108,14 +110,14 @@ class _EventFeedState extends State<EventFeed> {
             Icon(
               Icons.auto_awesome,
               size: 48,
-              color: AppColors.textTertiary.withValues(alpha: 0.5),
+              color: c.textTertiary.withValues(alpha: 0.5),
             ),
             const SizedBox(height: AppDimensions.paddingM),
             Text(
               'AI events will appear here',
               style: Theme.of(
                 context,
-              ).textTheme.bodyMedium?.copyWith(color: AppColors.textTertiary),
+              ).textTheme.bodyMedium?.copyWith(color: c.textTertiary),
             ),
           ],
         ),
@@ -159,10 +161,10 @@ class _EventFeedState extends State<EventFeed> {
               alignment: Alignment.centerRight,
               padding: const EdgeInsets.only(right: AppDimensions.paddingL),
               decoration: BoxDecoration(
-                color: AppColors.error.withValues(alpha: 0.15),
+                color: c.error.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(AppDimensions.radiusM),
               ),
-              child: const Icon(Icons.delete_outline, color: AppColors.error),
+              child: Icon(Icons.delete_outline, color: c.error),
             ),
             confirmDismiss: (_) => _confirmDelete(context),
             onDismissed: (_) => widget.onDeleteEvent!(event),
@@ -184,7 +186,7 @@ class _EventFeedState extends State<EventFeed> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.card,
+          backgroundColor: context.colors.card,
           title: const Text('Edit Event'),
           content: Column(
             mainAxisSize: MainAxisSize.min,

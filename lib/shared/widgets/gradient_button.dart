@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
+import '../../core/theme/app_color_scheme.dart';
 import '../../core/constants/app_dimensions.dart';
 
 class GradientButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
-  final Gradient gradient;
+  final Gradient? gradient;
   final IconData? icon;
   final bool isLoading;
   final double height;
@@ -14,9 +14,7 @@ class GradientButton extends StatelessWidget {
     super.key,
     required this.label,
     this.onPressed,
-    this.gradient = const LinearGradient(
-      colors: [AppColors.primary, AppColors.primaryLight],
-    ),
+    this.gradient,
     this.icon,
     this.isLoading = false,
     this.height = AppDimensions.buttonHeight,
@@ -24,11 +22,14 @@ class GradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final effectiveGradient = gradient ??
+        LinearGradient(colors: [c.primary, c.primaryLight]);
     return Container(
       height: height,
       decoration: BoxDecoration(
-        gradient: onPressed != null ? gradient : null,
-        color: onPressed == null ? AppColors.surfaceLight : null,
+        gradient: onPressed != null ? effectiveGradient : null,
+        color: onPressed == null ? c.surfaceLight : null,
         borderRadius: BorderRadius.circular(AppDimensions.radiusM),
       ),
       child: Material(
@@ -38,25 +39,25 @@ class GradientButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppDimensions.radiusM),
           child: Center(
             child: isLoading
-                ? const SizedBox(
+                ? SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      color: Colors.white,
+                      color: c.onPrimary,
                     ),
                   )
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (icon != null) ...[
-                        Icon(icon, color: Colors.white, size: 20),
+                        Icon(icon, color: c.onPrimary, size: 20),
                         const SizedBox(width: 8),
                       ],
                       Text(
                         label,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: c.onPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),

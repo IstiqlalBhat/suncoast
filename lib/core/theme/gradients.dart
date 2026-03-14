@@ -1,51 +1,54 @@
 import 'package:flutter/material.dart';
-import '../constants/app_colors.dart';
+import 'app_color_scheme.dart';
 
 abstract final class AppGradients {
-  static const primaryGradient = LinearGradient(
-    colors: [AppColors.primary, AppColors.primaryLight],
+  static LinearGradient primaryGradient(AppColorScheme c) => LinearGradient(
+    colors: [c.primary, c.primaryLight],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const passiveGradient = LinearGradient(
-    colors: [AppColors.passive, AppColors.passiveLight],
+  static LinearGradient passiveGradient(AppColorScheme c) => LinearGradient(
+    colors: [c.passive, c.passiveLight],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const chatGradient = LinearGradient(
-    colors: [AppColors.chat, AppColors.chatLight],
+  static LinearGradient chatGradient(AppColorScheme c) => LinearGradient(
+    colors: [c.chat, c.chatLight],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const mediaGradient = LinearGradient(
-    colors: [AppColors.media, AppColors.mediaLight],
+  static LinearGradient mediaGradient(AppColorScheme c) => LinearGradient(
+    colors: [c.media, c.mediaLight],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static const backgroundGradient = LinearGradient(
-    colors: [AppColors.background, AppColors.surface],
+  static LinearGradient backgroundGradient(AppColorScheme c) => LinearGradient(
+    colors: [
+      c.background,
+      c.deepForest.withValues(alpha: 0.6),
+    ],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );
 
-  static const cardGradient = LinearGradient(
+  static LinearGradient cardGradient(AppColorScheme c) => LinearGradient(
     colors: [
-      Color(0xFF1A1A2E),
-      Color(0xFF16162A),
+      c.surfaceLight,
+      c.surface,
     ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  static LinearGradient sessionGradient(Color color) {
+  static LinearGradient sessionGradient(Color color, AppColorScheme c) {
     return LinearGradient(
       colors: [
-        color.withValues(alpha: 0.15),
-        AppColors.background,
+        color.withValues(alpha: 0.12),
+        c.background,
       ],
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,

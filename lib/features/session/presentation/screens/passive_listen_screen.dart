@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_colors.dart';
+import '../../../../core/theme/app_color_scheme.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/theme/gradients.dart';
@@ -40,6 +40,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final sessionState = ref.watch(activeSessionProvider);
     final timerText = ref.watch(sessionTimerProvider);
     final sessionId = sessionState.session?.id;
@@ -49,14 +50,14 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
       appBar: SessionAppBar(
         title: AppStrings.passiveListen,
         subtitle: timerText,
-        accentColor: AppColors.passive,
+        accentColor: c.passive,
         onEndSession: () => _endSession(context),
       ),
       body: Stack(
         children: [
           Container(
         decoration: BoxDecoration(
-          gradient: AppGradients.sessionGradient(AppColors.passive),
+          gradient: AppGradients.sessionGradient(c.passive, c),
         ),
         child: SafeArea(
           child: Column(
@@ -69,7 +70,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                   horizontal: AppDimensions.paddingM,
                 ),
                 child: WaveformVisualizer(
-                  color: AppColors.passive,
+                  color: c.passive,
                   isActive: sessionState.isRecording && !sessionState.isMuted,
                   amplitude: sessionState.audioLevel,
                 ),
@@ -84,7 +85,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                   child: Text(
                     sessionState.activityTitle,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.textPrimary,
+                      color: c.textPrimary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -96,7 +97,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                     ? '${sessionState.isMuted ? 'Muted' : 'Recording'} · $timerText'
                     : 'Finalizing session...',
                 style: TextStyle(
-                  color: AppColors.passive.withValues(alpha: 0.8),
+                  color: c.passive.withValues(alpha: 0.8),
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -107,7 +108,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                   child: Text(
                     'Analyzing latest observations...',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
+                      color: c.textSecondary,
                     ),
                   ),
                 ),
@@ -120,17 +121,17 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                   ),
                   padding: const EdgeInsets.all(AppDimensions.paddingM),
                   decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.12),
+                    color: c.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(AppDimensions.radiusM),
                     border: Border.all(
-                      color: AppColors.error.withValues(alpha: 0.3),
+                      color: c.error.withValues(alpha: 0.3),
                     ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.error_outline,
-                        color: AppColors.error,
+                        color: c.error,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -138,7 +139,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                         child: Text(
                           sessionState.error!,
                           style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppColors.textPrimary),
+                              ?.copyWith(color: c.textPrimary),
                         ),
                       ),
                     ],
@@ -155,7 +156,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                   ),
                   padding: const EdgeInsets.all(AppDimensions.paddingM),
                   decoration: BoxDecoration(
-                    color: AppColors.surface.withValues(alpha: 0.8),
+                    color: c.surface.withValues(alpha: 0.8),
                     borderRadius: BorderRadius.circular(AppDimensions.radiusM),
                   ),
                   child: Text(
@@ -163,7 +164,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                         ? '...${sessionState.transcript.substring(math.max(0, sessionState.transcript.length - 200))}'
                         : sessionState.transcript,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
+                      color: c.textSecondary,
                       fontStyle: FontStyle.italic,
                     ),
                     maxLines: 3,
@@ -187,15 +188,15 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                                   .read(sessionRepositoryProvider)
                                   .deleteAiEvent(event.id),
                             ),
-                            loading: () => const Center(
+                            loading: () => Center(
                               child: CircularProgressIndicator(
-                                color: AppColors.passive,
+                                color: c.passive,
                               ),
                             ),
-                            error: (e, _) => const Center(
+                            error: (e, _) => Center(
                               child: Text(
                                 'Error loading events',
-                                style: TextStyle(color: AppColors.error),
+                                style: TextStyle(color: c.error),
                               ),
                             ),
                           )
@@ -214,7 +215,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                       label: sessionState.isMuted
                           ? AppStrings.unmute
                           : AppStrings.mute,
-                      color: AppColors.passive,
+                      color: c.passive,
                       onTap: () =>
                           ref.read(activeSessionProvider.notifier).toggleMute(),
                     ),
@@ -222,7 +223,7 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                     _ControlButton(
                       icon: Icons.stop_circle,
                       label: AppStrings.endSession,
-                      color: AppColors.error,
+                      color: c.error,
                       isLarge: true,
                       onTap: () => _endSession(context),
                     ),
@@ -236,16 +237,16 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
           if (_isEnding)
             Container(
               color: Colors.black54,
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: AppColors.passive),
-                    SizedBox(height: AppDimensions.paddingM),
+                    CircularProgressIndicator(color: c.passive),
+                    const SizedBox(height: AppDimensions.paddingM),
                     Text(
                       'Ending session...',
                       style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: c.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
@@ -290,6 +291,7 @@ class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final size = isLarge ? 72.0 : 56.0;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -310,7 +312,7 @@ class _ControlButton extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           label,
-          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          style: TextStyle(fontSize: 12, color: c.textSecondary),
         ),
       ],
     );
