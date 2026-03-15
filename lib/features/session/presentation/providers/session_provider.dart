@@ -63,7 +63,13 @@ final openAiRealtimeMediaServiceProvider = Provider<OpenAiRealtimeMediaService>(
 
 enum SessionConversationState { idle, userSpeaking, processing, aiSpeaking }
 
-enum RealtimeVoiceStatus { disconnected, connecting, connected, listening, aiSpeaking }
+enum RealtimeVoiceStatus {
+  disconnected,
+  connecting,
+  connected,
+  listening,
+  aiSpeaking,
+}
 
 enum MediaCaptureSource { camera, gallery, filePicker }
 
@@ -1061,9 +1067,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     if (state.session == null) return;
 
     _setStateIfMounted(
-      (current) => current.copyWith(
-        voiceStatus: RealtimeVoiceStatus.connecting,
-      ),
+      (current) =>
+          current.copyWith(voiceStatus: RealtimeVoiceStatus.connecting),
     );
 
     try {
@@ -1077,7 +1082,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       );
 
       final clientSecret = (response['clientSecret'] as String? ?? '').trim();
-      final model = (response['model'] as String? ?? 'gpt-4o-realtime-preview').trim();
+      final model = (response['model'] as String? ?? 'gpt-4o-realtime-preview')
+          .trim();
       final instructions = (response['instructions'] as String? ?? '').trim();
 
       if (clientSecret.isEmpty) {
@@ -1086,13 +1092,15 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
       // Configure audio session for playAndRecord
       final audioSession = await AudioSession.instance;
-      await audioSession.configure(AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.defaultToSpeaker |
-            AVAudioSessionCategoryOptions.allowBluetooth,
-        avAudioSessionMode: AVAudioSessionMode.voiceChat,
-      ));
+      await audioSession.configure(
+        AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+          avAudioSessionCategoryOptions:
+              AVAudioSessionCategoryOptions.defaultToSpeaker |
+              AVAudioSessionCategoryOptions.allowBluetooth,
+          avAudioSessionMode: AVAudioSessionMode.voiceChat,
+        ),
+      );
 
       _voiceService = OpenAiRealtimeVoiceService();
 
@@ -1112,34 +1120,42 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
       _voiceToolCallSub = _voiceService!.toolCallStream.listen((toolCall) {
         if (!mounted) return;
-        _addConversationEntry(ConversationEntry(
-          id: 'tool-${DateTime.now().microsecondsSinceEpoch}',
-          role: ConversationRole.ai,
-          type: ConversationEntryType.toolRequest,
-          text: toolCall.reason,
-          timestamp: DateTime.now(),
-          toolRequest: toolCall,
-        ));
+        _addConversationEntry(
+          ConversationEntry(
+            id: 'tool-${DateTime.now().microsecondsSinceEpoch}',
+            role: ConversationRole.ai,
+            type: ConversationEntryType.toolRequest,
+            text: toolCall.reason,
+            timestamp: DateTime.now(),
+            toolRequest: toolCall,
+          ),
+        );
         _setStateIfMounted(
           (current) => current.copyWith(activeToolRequest: toolCall),
         );
       });
 
       final userTranscriptBuffer = StringBuffer();
-      _voiceUserTranscriptSub = _voiceService!.userTranscriptStream.listen((text) {
+      _voiceUserTranscriptSub = _voiceService!.userTranscriptStream.listen((
+        text,
+      ) {
         if (!mounted || state.session == null) return;
         userTranscriptBuffer.write(text);
         final fullText = userTranscriptBuffer.toString().trim();
         if (fullText.isNotEmpty) {
-          _addConversationEntry(ConversationEntry(
-            id: 'user-${DateTime.now().microsecondsSinceEpoch}',
-            role: ConversationRole.user,
-            type: ConversationEntryType.text,
-            text: fullText,
-            timestamp: DateTime.now(),
-          ));
+          _addConversationEntry(
+            ConversationEntry(
+              id: 'user-${DateTime.now().microsecondsSinceEpoch}',
+              role: ConversationRole.user,
+              type: ConversationEntryType.text,
+              text: fullText,
+              timestamp: DateTime.now(),
+            ),
+          );
           final updated = _appendTranscriptLine('User: $fullText');
-          _setStateIfMounted((current) => current.copyWith(transcript: updated));
+          _setStateIfMounted(
+            (current) => current.copyWith(transcript: updated),
+          );
           _repository.updateTranscript(state.session!.id, updated);
           userTranscriptBuffer.clear();
         }
@@ -1168,19 +1184,19 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         if (!speaking && aiTranscriptBuffer.isNotEmpty) {
           final fullText = aiTranscriptBuffer.toString().trim();
           if (fullText.isNotEmpty) {
-            _addConversationEntry(ConversationEntry(
-              id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
-              role: ConversationRole.ai,
-              type: ConversationEntryType.text,
-              text: fullText,
-              timestamp: DateTime.now(),
-            ));
+            _addConversationEntry(
+              ConversationEntry(
+                id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
+                role: ConversationRole.ai,
+                type: ConversationEntryType.text,
+                text: fullText,
+                timestamp: DateTime.now(),
+              ),
+            );
             final updated = _appendTranscriptLine('AI: $fullText');
             _setStateIfMounted(
-              (current) => current.copyWith(
-                transcript: updated,
-                aiResponse: fullText,
-              ),
+              (current) =>
+                  current.copyWith(transcript: updated, aiResponse: fullText),
             );
             _repository.updateTranscript(state.session!.id, updated);
           }
@@ -1235,7 +1251,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           isConversationActive: true,
         ),
       );
-      _logger.i('Realtime voice session started (sampleRate=$_voiceSampleRate)');
+      _logger.i(
+        'Realtime voice session started (sampleRate=$_voiceSampleRate)',
+      );
     } catch (e) {
       _logger.e('Failed to start realtime voice session: $e');
       _setStateIfMounted(
@@ -1251,28 +1269,91 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   Future<void> handleToolCallMediaResponse(File file, String type) async {
     if (state.session == null) return;
+    final session = state.session!;
     final toolCall = state.activeToolRequest;
+    final captureType = type == 'image' ? 'photo' : 'pdf';
+    final mimeType = _inferMimeType(file, captureType);
+    final mediaType = type == 'image' ? MediaType.photo : MediaType.file;
+    final fileSizeBytes = await file.length();
+    final previewBytes = type == 'image'
+        ? await _loadPreviewBytes(file, mimeType)
+        : null;
+    final pendingAttachmentId =
+        'pending-${DateTime.now().microsecondsSinceEpoch}';
+    var activeAttachmentId = pendingAttachmentId;
 
     _setStateIfMounted(
       (current) => current.copyWith(
         isProcessing: true,
         activeToolRequest: null,
+        mediaItems: [
+          ...current.mediaItems,
+          SessionMediaItem(
+            attachment: MediaAttachmentModel(
+              id: pendingAttachmentId,
+              sessionId: session.id,
+              type: mediaType,
+              storagePath: '',
+              mimeType: mimeType,
+              fileSizeBytes: fileSizeBytes,
+              analysisStatus: 'processing',
+              metadata: {
+                'local_path': file.path,
+                'pending': true,
+                'source': 'tool_request',
+              },
+            ),
+            localPath: file.path,
+            isAnalyzing: true,
+            previewBytes: previewBytes,
+          ),
+        ],
       ),
     );
+    if (toolCall != null) {
+      _removeToolRequestEntry(toolCall.callId);
+    }
 
     try {
+      final uploadResult = await _uploadCapturedMedia(
+        file: file,
+        sessionId: session.id,
+        mediaType: mediaType,
+        captureType: captureType,
+        mimeType: mimeType,
+        fileSizeBytes: fileSizeBytes,
+        source: 'tool_request',
+      );
+
+      if (uploadResult == null) {
+        throw StateError('Failed to upload media');
+      }
+
+      activeAttachmentId = uploadResult.attachment.id;
+      _replaceMediaItem(
+        pendingAttachmentId,
+        SessionMediaItem(
+          attachment: uploadResult.attachment,
+          signedUrl: uploadResult.signedUrl,
+          localPath: file.path,
+          isAnalyzing: true,
+          previewBytes: previewBytes,
+        ),
+      );
+
       if (type == 'image') {
-        final bytes = await file.readAsBytes();
-        final mimeType = _inferMimeType(file, 'photo');
+        final bytes = previewBytes ?? await file.readAsBytes();
 
         // Add to conversation entries immediately
-        _addConversationEntry(ConversationEntry(
-          id: 'media-${DateTime.now().microsecondsSinceEpoch}',
-          role: ConversationRole.user,
-          type: ConversationEntryType.mediaAttachment,
-          text: 'Photo shared',
-          timestamp: DateTime.now(),
-        ));
+        _addConversationEntry(
+          ConversationEntry(
+            id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+            role: ConversationRole.user,
+            type: ConversationEntryType.mediaAttachment,
+            text: 'Photo shared',
+            timestamp: DateTime.now(),
+          ),
+        );
 
         // Use GPT-4o vision to analyze the image, then inject text into voice conversation
         final analysisResponse = await _apiClient.callFunction(
@@ -1280,24 +1361,42 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           data: {
             'image': base64Encode(bytes),
             'context': state.activityContext,
-            'sessionId': state.session!.id,
+            'sessionId': session.id,
+            'attachmentId': activeAttachmentId,
             'mimeType': mimeType,
           },
         );
         final analysis = (analysisResponse['analysis'] as String? ?? '').trim();
+        if (analysis.isEmpty) {
+          throw StateError('Image analysis returned empty content');
+        }
+
+        _updateMediaItem(
+          activeAttachmentId,
+          (item) => item.copyWith(
+            attachment: item.attachment.copyWith(
+              aiAnalysis: analysis,
+              analysisStatus: 'completed',
+            ),
+            analysis: analysis,
+            isAnalyzing: false,
+          ),
+        );
 
         if (analysis.isNotEmpty) {
           _voiceService?.sendMediaContext(
-            textContent: 'The user just shared a photo. Here is the image analysis:\n$analysis',
+            textContent:
+                'The user just shared a photo. Here is the image analysis:\n$analysis',
           );
         }
 
         // Submit tool result if this was a tool call
         if (toolCall != null) {
-          _voiceService?.submitToolResult(
-            toolCall.callId,
-            '{"status": "image_analyzed", "analysis": ${jsonEncode(analysis)}}',
-          );
+          _submitRealtimeToolResult(toolCall.callId, {
+            'status': 'image_analyzed',
+            'analysis': analysis,
+            'attachmentId': activeAttachmentId,
+          });
         }
       } else if (type == 'pdf') {
         final bytes = await file.readAsBytes();
@@ -1308,13 +1407,49 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           'extractPdfText',
           data: {
             'pdfBase64': base64Pdf,
-            'sessionId': state.session!.id,
+            'sessionId': session.id,
+            'attachmentId': activeAttachmentId,
           },
         );
 
         final extractedText = (result['text'] as String? ?? '').trim();
-        final pageCount = result['pageCount'] as int? ?? 0;
+        final pageCount = _parsePdfPageCount(result['pageCount']);
         final truncated = result['truncated'] as bool? ?? false;
+        final persistedServerSide = result.containsKey('analysis');
+        final attachmentAnalysis =
+            (result['analysis'] as String? ??
+                    _buildPdfAttachmentAnalysis(
+                      extractedText: extractedText,
+                      pageCount: pageCount,
+                      truncated: truncated,
+                    ))
+                .trim();
+
+        if (!persistedServerSide) {
+          await _persistPdfExtractionFallback(
+            attachmentId: activeAttachmentId,
+            analysis: attachmentAnalysis,
+            extractedText: extractedText,
+            pageCount: pageCount,
+            truncated: truncated,
+          );
+        }
+
+        _updateMediaItem(
+          activeAttachmentId,
+          (item) => item.copyWith(
+            attachment: item.attachment.copyWith(
+              aiAnalysis: attachmentAnalysis.isEmpty
+                  ? item.attachment.aiAnalysis
+                  : attachmentAnalysis,
+              analysisStatus: 'completed',
+            ),
+            analysis: attachmentAnalysis.isEmpty
+                ? item.analysis
+                : attachmentAnalysis,
+            isAnalyzing: false,
+          ),
+        );
 
         if (extractedText.isNotEmpty) {
           final pdfContext = [
@@ -1325,48 +1460,50 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           _voiceService?.sendMediaContext(textContent: pdfContext);
         }
 
-        _addConversationEntry(ConversationEntry(
-          id: 'media-${DateTime.now().microsecondsSinceEpoch}',
-          role: ConversationRole.user,
-          type: ConversationEntryType.mediaAttachment,
-          text: 'PDF shared ($pageCount pages)',
-          timestamp: DateTime.now(),
-        ));
+        _addConversationEntry(
+          ConversationEntry(
+            id: 'media-${DateTime.now().microsecondsSinceEpoch}',
+            role: ConversationRole.user,
+            type: ConversationEntryType.mediaAttachment,
+            text: 'PDF shared ($pageCount pages)',
+            timestamp: DateTime.now(),
+          ),
+        );
 
         if (toolCall != null) {
-          _voiceService?.submitToolResult(
-            toolCall.callId,
-            '{"status": "pdf_provided", "pages": $pageCount, "truncated": $truncated}',
-          );
+          _submitRealtimeToolResult(toolCall.callId, {
+            'status': 'pdf_provided',
+            'pages': pageCount,
+            'truncated': truncated,
+            'analysis': attachmentAnalysis,
+            'attachmentId': activeAttachmentId,
+          });
         }
       }
-
-      // Upload to Supabase for record keeping
-      final mimeType = _inferMimeType(file, type == 'image' ? 'photo' : 'file');
-      final mediaType = type == 'image' ? MediaType.photo : MediaType.file;
-      final fileSizeBytes = await file.length();
-
-      unawaited(_uploadCapturedMedia(
-        file: file,
-        sessionId: state.session!.id,
-        mediaType: mediaType,
-        captureType: type == 'image' ? 'photo' : 'file',
-        mimeType: mimeType,
-        fileSizeBytes: fileSizeBytes,
-        source: 'tool_request',
-      ));
     } catch (e) {
       _logger.e('Failed to handle tool call media response: $e');
+      if (activeAttachmentId != pendingAttachmentId) {
+        await _repository.updateMediaAttachment(activeAttachmentId, {
+          'analysis_status': 'failed',
+        });
+      }
+      _updateMediaItem(
+        activeAttachmentId,
+        (item) => item.copyWith(
+          attachment: item.attachment.copyWith(analysisStatus: 'failed'),
+          analysis: type == 'pdf'
+              ? 'PDF processing failed.'
+              : 'Image analysis failed.',
+          isAnalyzing: false,
+        ),
+      );
       if (toolCall != null) {
-        _voiceService?.submitToolResult(
-          toolCall.callId,
-          '{"error": "Failed to process media: $e"}',
-        );
+        _submitRealtimeToolResult(toolCall.callId, {
+          'error': 'Failed to process media',
+        });
       }
     } finally {
-      _setStateIfMounted(
-        (current) => current.copyWith(isProcessing: false),
-      );
+      _setStateIfMounted((current) => current.copyWith(isProcessing: false));
     }
   }
 
@@ -1374,14 +1511,84 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     final toolCall = state.activeToolRequest;
     if (toolCall == null) return;
 
-    _voiceService?.submitToolResult(
-      toolCall.callId,
-      '{"status": "dismissed", "reason": "User declined to provide media"}',
+    _submitRealtimeToolResult(toolCall.callId, {
+      'status': 'dismissed',
+      'reason': 'User declined to provide media',
+    });
+
+    _setStateIfMounted((current) => current.copyWith(activeToolRequest: null));
+    _removeToolRequestEntry(toolCall.callId);
+  }
+
+  void _submitRealtimeToolResult(String callId, Map<String, dynamic> payload) {
+    _voiceService?.submitToolResult(callId, jsonEncode(payload));
+  }
+
+  void _removeToolRequestEntry(String callId) {
+    _setStateIfMounted(
+      (current) => current.copyWith(
+        conversationEntries: current.conversationEntries
+            .where(
+              (entry) =>
+                  entry.type != ConversationEntryType.toolRequest ||
+                  entry.toolRequest?.callId != callId,
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Future<void> _persistPdfExtractionFallback({
+    required String attachmentId,
+    required String analysis,
+    required String extractedText,
+    required int pageCount,
+    required bool truncated,
+  }) async {
+    final normalizedAnalysis = analysis.trim();
+    if (normalizedAnalysis.isEmpty || state.session == null) {
+      return;
+    }
+
+    final updatedAttachment = await _repository.updateMediaAttachment(
+      attachmentId,
+      {'ai_analysis': normalizedAnalysis, 'analysis_status': 'completed'},
     );
 
-    _setStateIfMounted(
-      (current) => current.copyWith(activeToolRequest: null),
+    final attachment = updatedAttachment.dataOrNull;
+    if (attachment != null) {
+      _updateMediaItem(
+        attachmentId,
+        (item) => item.copyWith(attachment: attachment),
+      );
+    }
+
+    final eventContent = _buildPdfObservationContent(
+      extractedText: extractedText,
+      pageCount: pageCount,
+      truncated: truncated,
     );
+
+    if (eventContent.isEmpty) {
+      return;
+    }
+
+    final eventResult = await _repository.createAiEvent(
+      sessionId: state.session!.id,
+      type: AiEventType.observation,
+      content: eventContent,
+      source: 'pdf_extract',
+      metadata: {
+        'source': 'pdf_extract',
+        'attachmentId': attachmentId,
+        'pageCount': pageCount,
+        'truncated': truncated,
+      },
+    );
+
+    if (eventResult.isFailure) {
+      _logger.w('Failed to persist PDF extraction event');
+    }
   }
 
   void _addConversationEntry(ConversationEntry entry) {
@@ -1615,6 +1822,61 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
 
     return contextSections.join('\n\n');
+  }
+
+  String _buildPdfAttachmentAnalysis({
+    required String extractedText,
+    required int pageCount,
+    required bool truncated,
+  }) {
+    final header =
+        'PDF extracted successfully ($pageCount pages${truncated ? ', truncated' : ''}).';
+    final normalizedText = _normalizeMediaText(extractedText);
+    if (normalizedText.isEmpty) {
+      return '$header\n\nNo extractable text was found in the PDF.';
+    }
+
+    const maxLength = 6000;
+    final availableLength = math.max(maxLength - header.length - 2, 0);
+    final excerpt = normalizedText.substring(
+      0,
+      math.min(normalizedText.length, availableLength),
+    );
+    return '$header\n\n$excerpt';
+  }
+
+  String _buildPdfObservationContent({
+    required String extractedText,
+    required int pageCount,
+    required bool truncated,
+  }) {
+    final header =
+        'PDF uploaded ($pageCount pages${truncated ? ', extracted text truncated' : ''}).';
+    final normalizedText = _normalizeMediaText(extractedText);
+    if (normalizedText.isEmpty) {
+      return '$header No extractable text was found.';
+    }
+
+    const maxLength = 320;
+    final excerpt = normalizedText.substring(
+      0,
+      math.min(normalizedText.length, maxLength),
+    );
+    return '$header $excerpt';
+  }
+
+  String _normalizeMediaText(String value) {
+    return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  int _parsePdfPageCount(dynamic value) {
+    return switch (value) {
+      int number => number,
+      num number => number.toInt(),
+      String text => int.tryParse(text.trim()) ?? 0,
+      List<dynamic> items => items.length,
+      _ => 0,
+    };
   }
 
   MediaType _parseMediaType(String captureType) {

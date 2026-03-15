@@ -29,6 +29,7 @@ class OpenAiRealtimeVoiceService {
   StreamSubscription? _playerStateSubscription;
   Timer? _speakingEndTimer;
   bool _aiSpeaking = false;
+  bool _hasActiveResponse = false;
 
   // State
   VoiceSessionStatus _status = VoiceSessionStatus.disconnected;
@@ -133,9 +134,7 @@ class OpenAiRealtimeVoiceService {
               },
             },
           ],
-          'input_audio_transcription': {
-            'model': 'whisper-1',
-          },
+          'input_audio_transcription': {'model': 'whisper-1'},
           'max_response_output_tokens': 4096,
         },
       });
@@ -155,10 +154,7 @@ class OpenAiRealtimeVoiceService {
 
     try {
       final base64Audio = base64Encode(pcm16Bytes);
-      _sendEvent({
-        'type': 'input_audio_buffer.append',
-        'audio': base64Audio,
-      });
+      _sendEvent({'type': 'input_audio_buffer.append', 'audio': base64Audio});
     } catch (e) {
       _logger.e('Failed to send audio chunk: $e');
     }
@@ -167,8 +163,7 @@ class OpenAiRealtimeVoiceService {
   void sendMediaContext({String? textContent}) {
     if (!isConnected || _socket == null || textContent == null) return;
 
-    // Cancel any in-progress response first
-    _sendEvent({'type': 'response.cancel'});
+    _cancelActiveResponseIfNeeded();
 
     _sendEvent({
       'type': 'conversation.item.create',
@@ -176,18 +171,14 @@ class OpenAiRealtimeVoiceService {
         'type': 'message',
         'role': 'user',
         'content': [
-          {
-            'type': 'input_text',
-            'text': textContent,
-          },
+          {'type': 'input_text', 'text': textContent},
         ],
       },
     });
 
     // Trigger a response after injecting context
-    _sendEvent({
-      'type': 'response.create',
-    });
+    _sendEvent({'type': 'response.create'});
+    _hasActiveResponse = true;
   }
 
   void submitToolResult(String callId, String result) {
@@ -203,6 +194,7 @@ class OpenAiRealtimeVoiceService {
     });
 
     _sendEvent({'type': 'response.create'});
+    _hasActiveResponse = true;
   }
 
   void _handleMessage(dynamic rawMessage) {
@@ -216,7 +208,12 @@ class OpenAiRealtimeVoiceService {
           _logger.i('Session event: $type');
           break;
 
+        case 'response.created':
+          _hasActiveResponse = true;
+          break;
+
         case 'response.audio.delta':
+          _hasActiveResponse = true;
           final delta = event['delta'] as String?;
           if (delta != null) {
             _handleAudioChunk(delta);
@@ -230,6 +227,7 @@ class OpenAiRealtimeVoiceService {
           break;
 
         case 'response.audio_transcript.delta':
+          _hasActiveResponse = true;
           final delta = event['delta'] as String? ?? '';
           if (delta.isNotEmpty) {
             _aiTranscriptController.add(delta);
@@ -258,6 +256,7 @@ class OpenAiRealtimeVoiceService {
           break;
 
         case 'response.function_call_arguments.delta':
+          _hasActiveResponse = true;
           final callId = event['call_id'] as String?;
           final name = event['name'] as String?;
           final delta = event['delta'] as String? ?? '';
@@ -272,7 +271,8 @@ class OpenAiRealtimeVoiceService {
         case 'response.function_call_arguments.done':
           final callId = event['call_id'] as String? ?? _currentFunctionCallId;
           final name = event['name'] as String? ?? _currentFunctionName;
-          final argsJson = event['arguments'] as String? ?? _functionCallArgs.toString();
+          final argsJson =
+              event['arguments'] as String? ?? _functionCallArgs.toString();
 
           if (callId != null && name != null) {
             _handleFunctionCall(callId, name, argsJson);
@@ -283,6 +283,7 @@ class OpenAiRealtimeVoiceService {
           break;
 
         case 'response.done':
+          _hasActiveResponse = false;
           break;
 
         case 'error':
@@ -290,6 +291,11 @@ class OpenAiRealtimeVoiceService {
           String message = 'Unknown error';
           if (errorObj is Map<String, dynamic>) {
             message = errorObj['message'] as String? ?? message;
+          }
+          if (_shouldIgnoreRealtimeError(message)) {
+            _hasActiveResponse = false;
+            _logger.w('Ignoring benign realtime error: $message');
+            break;
           }
           _logger.e('OpenAI realtime error: $message');
           _errorController.add(message);
@@ -308,11 +314,9 @@ class OpenAiRealtimeVoiceService {
       final args = jsonDecode(argsJson) as Map<String, dynamic>;
       final reason = args['reason'] as String? ?? '';
 
-      _toolCallController.add(ToolCallRequest(
-        callId: callId,
-        toolName: name,
-        reason: reason,
-      ));
+      _toolCallController.add(
+        ToolCallRequest(callId: callId, toolName: name, reason: reason),
+      );
     } catch (e) {
       _logger.e('Failed to parse function call: $e');
       // Submit error result so AI can continue
@@ -430,6 +434,20 @@ class OpenAiRealtimeVoiceService {
     }
   }
 
+  void _cancelActiveResponseIfNeeded() {
+    if (!_hasActiveResponse) {
+      return;
+    }
+    _sendEvent({'type': 'response.cancel'});
+    _hasActiveResponse = false;
+  }
+
+  bool _shouldIgnoreRealtimeError(String message) {
+    final normalized = message.trim().toLowerCase();
+    return normalized.contains('cancellation failed') &&
+        normalized.contains('no active response found');
+  }
+
   void _sendEvent(Map<String, dynamic> event) {
     final socket = _socket;
     if (socket == null || socket.readyState != WebSocket.open) return;
@@ -438,11 +456,13 @@ class OpenAiRealtimeVoiceService {
 
   void _handleClosed() {
     _logger.w('OpenAI realtime voice socket closed');
+    _hasActiveResponse = false;
     _updateStatus(VoiceSessionStatus.disconnected);
   }
 
   void _handleError(Object error) {
     _logger.e('OpenAI realtime voice socket error: $error');
+    _hasActiveResponse = false;
     _updateStatus(VoiceSessionStatus.error);
     _errorController.add('Connection error');
   }
@@ -461,6 +481,7 @@ class OpenAiRealtimeVoiceService {
 
     final socket = _socket;
     _socket = null;
+    _hasActiveResponse = false;
     if (socket != null) {
       await socket.close();
     }
