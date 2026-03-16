@@ -101,6 +101,12 @@ class SettingsNotifier extends AsyncNotifier<UserSettingsModel> {
     return _save(current.copyWith(language: language));
   }
 
+  Future<String?> updateSttEngine(SttEngine engine) async {
+    final current = state.valueOrNull;
+    if (current == null) return 'Settings not loaded yet';
+    return _save(current.copyWith(sttEngine: engine));
+  }
+
   Future<String?> _save(UserSettingsModel settings) async {
     final previous = state.valueOrNull;
     state = AsyncValue.data(settings);

@@ -34,6 +34,7 @@ class SettingsRemoteDatasource {
         'confirmation_mode': settings.confirmationMode.name,
         'language': settings.language,
         'use_premium_tts': settings.usePremiumTts,
+        'stt_engine': settings.sttEngine.name,
       };
 
       final response = await _supabase

@@ -150,7 +150,43 @@ class SettingsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 28),
 
-                // ── Voice ──
+                // ── Speech Recognition ──
+                const _SectionTitle(title: 'Speech Recognition'),
+                const SizedBox(height: 8),
+                RadioGroup<SttEngine>(
+                  groupValue: settings.sttEngine,
+                  onChanged: (engine) {
+                    if (engine != null) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .updateSttEngine(engine);
+                    }
+                  },
+                  child: _SettingsGroup(
+                    children: [
+                      _SettingsTile(
+                        icon: Icons.phone_iphone,
+                        title: 'On-Device (Apple)',
+                        subtitle: 'Private, no internet needed',
+                        trailing: Radio<SttEngine>(value: SttEngine.device),
+                      ),
+                      Divider(
+                        height: 1,
+                        indent: 56,
+                        color: c.divider,
+                      ),
+                      _SettingsTile(
+                        icon: Icons.cloud_outlined,
+                        title: 'Cloud (OpenAI Whisper)',
+                        subtitle: 'Higher accuracy, requires internet',
+                        trailing: Radio<SttEngine>(value: SttEngine.cloud),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ── Voice Output ──
                 const _SectionTitle(title: AppStrings.voiceOutput),
                 const SizedBox(height: 8),
                 _SettingsGroup(
@@ -171,15 +207,43 @@ class SettingsScreen extends ConsumerWidget {
                       color: c.divider,
                     ),
                     _SettingsTile(
-                      icon: Icons.auto_awesome,
-                      title: 'Premium Voice (OpenAI)',
-                      subtitle: 'Higher quality AI voice',
-                      trailing: Switch(
-                        value: settings.usePremiumTts,
+                      icon: Icons.phone_iphone,
+                      title: 'On-Device (Apple)',
+                      subtitle: 'Built-in system voice',
+                      trailing: Radio<bool>(
+                        value: false,
+                        groupValue: settings.usePremiumTts,
                         onChanged: settings.voiceOutputEnabled
-                            ? (v) => ref
-                                  .read(settingsProvider.notifier)
-                                  .updatePremiumTts(v)
+                            ? (v) {
+                                if (v != null) {
+                                  ref
+                                      .read(settingsProvider.notifier)
+                                      .updatePremiumTts(v);
+                                }
+                              }
+                            : null,
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      indent: 56,
+                      color: c.divider,
+                    ),
+                    _SettingsTile(
+                      icon: Icons.cloud_outlined,
+                      title: 'Cloud (OpenAI)',
+                      subtitle: 'Higher quality AI voice',
+                      trailing: Radio<bool>(
+                        value: true,
+                        groupValue: settings.usePremiumTts,
+                        onChanged: settings.voiceOutputEnabled
+                            ? (v) {
+                                if (v != null) {
+                                  ref
+                                      .read(settingsProvider.notifier)
+                                      .updatePremiumTts(v);
+                                }
+                              }
                             : null,
                       ),
                     ),

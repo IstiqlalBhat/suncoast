@@ -3,10 +3,15 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var appleSttPlugin: AppleSttPlugin?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if let controller = window?.rootViewController as? FlutterViewController {
+      appleSttPlugin = AppleSttPlugin(messenger: controller.binaryMessenger)
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

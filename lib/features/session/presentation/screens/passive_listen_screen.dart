@@ -8,8 +8,10 @@ import '../../../../core/constants/app_strings.dart';
 import '../../../../core/theme/gradients.dart';
 import '../../../../shared/models/session_model.dart';
 import '../../../../shared/widgets/event_feed.dart';
+import '../../../../shared/models/user_settings_model.dart';
 import '../../../../shared/widgets/session_app_bar.dart';
 import '../../../../shared/widgets/waveform_visualizer.dart';
+import '../../../settings/presentation/providers/settings_provider.dart';
 import '../providers/session_provider.dart';
 
 class PassiveListenScreen extends ConsumerStatefulWidget {
@@ -92,15 +94,45 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
                 ),
               const SizedBox(height: AppDimensions.paddingS),
 
-              Text(
-                sessionState.isRecording
-                    ? '${sessionState.isMuted ? 'Muted' : 'Recording'} · $timerText'
-                    : 'Finalizing session...',
-                style: TextStyle(
-                  color: c.passive.withValues(alpha: 0.8),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    sessionState.isRecording
+                        ? '${sessionState.isMuted ? 'Muted' : 'Recording'} · $timerText'
+                        : 'Finalizing session...',
+                    style: TextStyle(
+                      color: c.passive.withValues(alpha: 0.8),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (ref.watch(settingsProvider).valueOrNull?.sttEngine ==
+                      SttEngine.device) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.passive.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: c.passive.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        'On-Device',
+                        style: TextStyle(
+                          color: c.passive,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               if (sessionState.isProcessing && sessionState.isRecording)
                 Padding(
