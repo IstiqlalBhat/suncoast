@@ -2392,9 +2392,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   void reset() {
-    _stopConversation();
-    _stopVoiceSession();
-    _stopOnDeviceStt();
+    unawaited(_stopConversation());
+    unawaited(_stopVoiceSession());
+    unawaited(_stopOnDeviceStt());
     _realtimeMediaService.disconnect();
     _timer?.cancel();
     _transcriptionTimer?.cancel();
@@ -2418,9 +2418,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   @override
   void dispose() {
-    _stopConversation();
-    _stopVoiceSession();
-    _stopOnDeviceStt();
+    unawaited(_stopConversation());
+    unawaited(_stopVoiceSession());
+    unawaited(_stopOnDeviceStt());
     _voiceService?.dispose();
     _conversationService?.dispose();
     _realtimeMediaService.dispose();
