@@ -62,7 +62,7 @@ class VoiceActivityGate {
     required bool aiSpeaking,
   }) {
     final pcmChunk = Uint8List.fromList(chunk);
-    final micLevel = _computeLevel(pcmChunk);
+    final micLevel = computeLevel(pcmChunk);
 
     if (!aiSpeaking) {
       _adaptNoiseFloor(micLevel, aggressive: true);
@@ -160,7 +160,7 @@ class VoiceActivityGate {
         .toDouble();
   }
 
-  static double _computeLevel(Uint8List pcmChunk) {
+  static double computeLevel(Uint8List pcmChunk) {
     if (pcmChunk.length < 2) {
       return 0.0;
     }
