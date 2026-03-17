@@ -101,6 +101,12 @@ class SettingsNotifier extends AsyncNotifier<UserSettingsModel> {
     return _save(current.copyWith(language: language));
   }
 
+  Future<String?> updateElevenlabs(bool enabled) async {
+    final current = state.valueOrNull;
+    if (current == null) return 'Settings not loaded yet';
+    return _save(current.copyWith(elevenlabsEnabled: enabled));
+  }
+
   Future<String?> updateSttEngine(SttEngine engine) async {
     final current = state.valueOrNull;
     if (current == null) return 'Settings not loaded yet';

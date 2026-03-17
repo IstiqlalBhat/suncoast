@@ -12,6 +12,7 @@ import '../../../../shared/models/user_settings_model.dart';
 import '../../../../shared/widgets/session_app_bar.dart';
 import '../../../../shared/widgets/waveform_visualizer.dart';
 import '../../../settings/presentation/providers/settings_provider.dart';
+import '../../../summary/presentation/providers/summary_provider.dart';
 import '../providers/session_provider.dart';
 
 class PassiveListenScreen extends ConsumerStatefulWidget {
@@ -266,43 +267,23 @@ class _PassiveListenScreenState extends ConsumerState<PassiveListenScreen> {
           ),
         ),
       ),
-          if (_isEnding)
-            Container(
-              color: Colors.black54,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: c.passive),
-                    const SizedBox(height: AppDimensions.paddingM),
-                    Text(
-                      'Ending session...',
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 
-  Future<void> _endSession(BuildContext context) async {
+  void _endSession(BuildContext context) {
     if (_isEnding) return;
-    setState(() => _isEnding = true);
-    final sessionId = await ref
-        .read(activeSessionProvider.notifier)
-        .endSession();
-    if (sessionId != null && context.mounted) {
-      context.go('/session/${widget.activityId}/summary?sessionId=$sessionId');
-    } else if (mounted) {
-      setState(() => _isEnding = false);
-    }
+    _isEnding = true;
+    final sessionId = ref.read(activeSessionProvider).session?.id;
+    if (sessionId == null) return;
+
+    // Navigate immediately — no blocking overlay
+    triggerSummaryGeneration(ref, sessionId);
+    context.go('/session/${widget.activityId}/summary?sessionId=$sessionId');
+
+    // Clean up session in the background
+    ref.read(activeSessionProvider.notifier).endSession();
   }
 }
 

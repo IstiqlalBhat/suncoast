@@ -22,6 +22,7 @@ _UserSettingsModel _$UserSettingsModelFromJson(Map<String, dynamic> json) =>
           ConfirmationMode.smart,
       language: json['language'] as String? ?? 'en',
       usePremiumTts: json['use_premium_tts'] as bool? ?? true,
+      elevenlabsEnabled: json['elevenlabs_enabled'] as bool? ?? true,
       sttEngine:
           $enumDecodeNullable(_$SttEngineEnumMap, json['stt_engine']) ??
           SttEngine.cloud,
@@ -39,6 +40,7 @@ Map<String, dynamic> _$UserSettingsModelToJson(
   'confirmation_mode': _$ConfirmationModeEnumMap[instance.confirmationMode]!,
   'language': instance.language,
   'use_premium_tts': instance.usePremiumTts,
+  'elevenlabs_enabled': instance.elevenlabsEnabled,
   'stt_engine': _$SttEngineEnumMap[instance.sttEngine]!,
 };
 

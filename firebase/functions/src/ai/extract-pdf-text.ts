@@ -8,7 +8,7 @@ import {
   authenticateCallableRequest,
 } from "../utils/auth";
 import { logFunctionError } from "../utils/logging";
-import { PDFParse } from "pdf-parse";
+import PDFParse from "pdf-parse";
 
 const supabaseUrl = defineSecret("SUPABASE_URL");
 const supabaseServiceKey = defineSecret("SUPABASE_SERVICE_KEY");
@@ -42,12 +42,9 @@ export const extractPdfText = onCall(
 
     try {
       const buffer = Buffer.from(pdfBase64, "base64");
-      const parser = new PDFParse({ data: buffer });
-      const info = await parser.getInfo();
-      const textResult = await parser.getText();
-      await parser.destroy();
+      const data = await PDFParse(buffer);
 
-      let text = (textResult.text || "").trim();
+      let text = (data.text || "").trim();
       let truncated = false;
 
       if (text.length > MAX_TEXT_LENGTH) {
@@ -55,7 +52,7 @@ export const extractPdfText = onCall(
         truncated = true;
       }
 
-      const pageCount = info.total || 0;
+      const pageCount = data.numpages || 0;
       const analysis = buildAttachmentAnalysis(text, pageCount, truncated);
 
       if (attachmentId) {
@@ -65,7 +62,8 @@ export const extractPdfText = onCall(
             ai_analysis: analysis,
             analysis_status: "completed",
           })
-          .eq("id", attachmentId);
+          .eq("id", attachmentId)
+          .eq("user_id", user.id);
 
         if (updateError) {
           logger.error("Failed to update PDF attachment analysis", {
@@ -114,7 +112,8 @@ export const extractPdfText = onCall(
         await supabase
           .from("media_attachments")
           .update({ analysis_status: "failed" })
-          .eq("id", attachmentId);
+          .eq("id", attachmentId)
+          .eq("user_id", user.id);
       }
       logFunctionError("extractPdfText", error, {
         sessionId,

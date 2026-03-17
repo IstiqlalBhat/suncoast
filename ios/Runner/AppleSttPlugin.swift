@@ -70,12 +70,21 @@ class AppleSttPlugin: NSObject, FlutterStreamHandler {
         case .authorized:
             result(true)
         case .notDetermined:
-            SFSpeechRecognizer.requestAuthorization { newStatus in
+            SFSpeechRecognizer.requestAuthorization { [weak self] newStatus in
                 DispatchQueue.main.async {
-                    result(newStatus == .authorized)
+                    if newStatus == .authorized {
+                        result(true)
+                    } else {
+                        self?.sendEvent(["type": "error", "message": "permission_denied"])
+                        result(false)
+                    }
                 }
             }
-        case .denied, .restricted:
+        case .denied:
+            sendEvent(["type": "error", "message": "permission_denied"])
+            result(false)
+        case .restricted:
+            sendEvent(["type": "error", "message": "permission_restricted"])
             result(false)
         @unknown default:
             result(false)
@@ -91,27 +100,20 @@ class AppleSttPlugin: NSObject, FlutterStreamHandler {
         currentLocale = locale
         shouldRestart = true
 
-        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: locale)) else {
-            sendEvent(["type": "error", "message": "Speech recognizer unavailable for locale: \(locale)"])
+        // Try specified locale first, fall back to default system recognizer
+        let recognizer: SFSpeechRecognizer
+        if let localeRecognizer = SFSpeechRecognizer(locale: Locale(identifier: locale)),
+           localeRecognizer.isAvailable {
+            recognizer = localeRecognizer
+        } else if let defaultRecognizer = SFSpeechRecognizer(), defaultRecognizer.isAvailable {
+            recognizer = defaultRecognizer
+        } else {
+            sendEvent(["type": "error", "message": "No speech recognizer available"])
             sendEvent(["type": "status", "state": "unavailable"])
             result(false)
             return
         }
 
-        guard recognizer.isAvailable else {
-            sendEvent(["type": "error", "message": "Speech recognizer not available"])
-            sendEvent(["type": "status", "state": "unavailable"])
-            result(false)
-            return
-        }
-
-        // Log whether on-device is reported as supported, but don't hard-fail —
-        // supportsOnDeviceRecognition can return false on some iOS versions even
-        // when on-device recognition actually works. We set requiresOnDeviceRecognition
-        // on the request and let the recognition task itself fail if truly unavailable.
-        if !recognizer.supportsOnDeviceRecognition {
-            sendEvent(["type": "status", "state": "on_device_not_reported"])
-        }
 
         speechRecognizer = recognizer
 
@@ -131,65 +133,44 @@ class AppleSttPlugin: NSObject, FlutterStreamHandler {
         recognitionTask = nil
         recognitionRequest = nil
 
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.requiresOnDeviceRecognition = true
-        request.shouldReportPartialResults = true
+        guard let recognizer = speechRecognizer else { return }
 
-        recognitionRequest = request
+        // Bare minimum: audio session, engine, request, task — nothing extra
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record)
+        try audioSession.setActive(true)
 
-        // Set up audio engine
         if audioEngine == nil {
             audioEngine = AVAudioEngine()
         }
+        guard let audioEngine = audioEngine else { return }
 
-        guard let audioEngine = audioEngine else {
-            throw NSError(domain: "AppleSttPlugin", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: "Failed to create audio engine"])
-        }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        recognitionRequest = request
 
         let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0)
+        let hwFormat = inputNode.outputFormat(forBus: 0)
 
-        // Only set up audio engine tap if not already running (first start).
-        // On restart (60s limit), the engine stays running — just create a new request.
-        if !audioEngine.isRunning {
-            inputNode.removeTap(onBus: 0)
-
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-                self?.recognitionRequest?.append(buffer)
-                self?.processSoundLevel(buffer: buffer)
-            }
-
-            audioEngine.prepare()
-            try audioEngine.start()
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hwFormat) { [weak self] buffer, _ in
+            self?.recognitionRequest?.append(buffer)
+            self?.processSoundLevel(buffer: buffer)
         }
 
-        // Start recognition
-        guard let recognizer = speechRecognizer else { return }
+        audioEngine.prepare()
+        try audioEngine.start()
 
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] taskResult, error in
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] res, err in
             guard let self = self else { return }
-
-            if let taskResult = taskResult {
-                let text = taskResult.bestTranscription.formattedString
-                let isFinal = taskResult.isFinal
-
-                self.sendEvent([
-                    "type": "transcript",
-                    "text": text,
-                    "isFinal": isFinal,
-                ])
-
-                // Auto-restart when task completes (60s limit)
-                if isFinal {
-                    self.restartIfNeeded()
-                }
+            if let res = res {
+                self.sendEvent(["type": "transcript", "text": res.bestTranscription.formattedString, "isFinal": res.isFinal])
+                if res.isFinal { self.restartIfNeeded() }
             }
-
-            if let error = error as NSError? {
-                // Code 216 = no speech detected, 1 = task cancelled — both are non-fatal
-                if error.code != 216 && error.code != 1 {
-                    self.sendEvent(["type": "error", "message": error.localizedDescription])
+            if let err = err as NSError? {
+                // 301 = cancelled (normal on stop), 216 = no speech, 1 = task cancelled
+                if err.code != 301 && err.code != 216 && err.code != 1 {
+                    self.sendEvent(["type": "error", "message": err.localizedDescription])
                 }
                 self.restartIfNeeded()
             }
@@ -223,18 +204,38 @@ class AppleSttPlugin: NSObject, FlutterStreamHandler {
 
     // MARK: - Sound Level
 
+    private var soundLevelCounter = 0
+
     private func processSoundLevel(buffer: AVAudioPCMBuffer) {
-        guard let channelData = buffer.floatChannelData?[0] else { return }
+        // Throttle to ~10 events/sec (every 5th buffer at ~48 buffers/sec)
+        soundLevelCounter += 1
+        guard soundLevelCounter % 5 == 0 else { return }
+
         let frameLength = Int(buffer.frameLength)
         guard frameLength > 0 else { return }
 
-        var sum: Float = 0
-        for i in 0..<frameLength {
-            sum += channelData[i] * channelData[i]
-        }
-        let rms = sqrt(sum / Float(frameLength))
+        var rms: Float = 0
 
-        // Convert to a 0-1 range (RMS of speech is typically 0.01-0.3)
+        if let channelData = buffer.floatChannelData?[0] {
+            // Float format
+            var sum: Float = 0
+            for i in 0..<frameLength {
+                sum += channelData[i] * channelData[i]
+            }
+            rms = sqrt(sum / Float(frameLength))
+        } else if let channelData = buffer.int16ChannelData?[0] {
+            // Int16 format
+            var sum: Float = 0
+            for i in 0..<frameLength {
+                let sample = Float(channelData[i]) / Float(Int16.max)
+                sum += sample * sample
+            }
+            rms = sqrt(sum / Float(frameLength))
+        } else {
+            return
+        }
+
+        // Convert to a 0-1 range
         let normalized = min(max(Double(rms) * 5.0, 0.0), 1.0)
 
         DispatchQueue.main.async { [weak self] in

@@ -12,23 +12,34 @@ class AppleSttService {
   final _statusController = StreamController<String>.broadcast();
   StreamSubscription? _eventSub;
 
-  // Accumulates partial results; emits final transcript chunks
+  // Accumulates partial results; emits new words as they arrive
   String _partialTranscript = '';
+  int _lastEmittedLength = 0;
+  String? _lastError;
 
   Stream<String> get transcriptStream => _transcriptController.stream;
   Stream<double> get soundLevelStream => _soundLevelController.stream;
   Stream<String> get statusStream => _statusController.stream;
 
-  Future<bool> initialize() async {
+  /// Returns null on success, or an error message string on failure.
+  Future<String?> initialize() async {
     try {
+      _listenToEvents();
+      _lastError = null;
       final result = await _methodChannel.invokeMethod<bool>('initialize');
-      if (result == true) {
-        _listenToEvents();
+      if (result == true) return null;
+      // Return specific error if native side reported one
+      if (_lastError == 'permission_denied') {
+        return 'Speech Recognition permission denied. '
+            'Go to Settings > myEA > Speech Recognition and enable it.';
       }
-      return result ?? false;
+      if (_lastError == 'permission_restricted') {
+        return 'Speech Recognition is restricted on this device.';
+      }
+      return 'Speech Recognition permission not granted.';
     } catch (e) {
       _logger.e('Failed to initialize Apple STT: $e');
-      return false;
+      return 'Failed to initialize speech recognition: $e';
     }
   }
 
@@ -51,8 +62,13 @@ class AppleSttService {
             _statusController.add(state);
           case 'error':
             final message = data['message'] as String? ?? 'Unknown error';
+            _lastError = message;
             _logger.e('Apple STT error: $message');
             _statusController.add('error');
+          case 'debug':
+            final message = data['message'] as String? ?? '';
+            _logger.i('Apple STT debug: $message');
+            _statusController.add('debug: $message');
         }
       },
       onError: (error) {
@@ -68,10 +84,20 @@ class AppleSttService {
     if (text.isEmpty) return;
 
     if (isFinal) {
-      // Emit the final transcript and reset partial
+      // Emit the full final transcript, then reset for next recognition task
       _transcriptController.add(text);
       _partialTranscript = '';
+      _lastEmittedLength = 0;
     } else {
+      // SFSpeechRecognizer sends cumulative partial results (full text so far).
+      // Emit only the new portion since our last emission.
+      if (text.length > _lastEmittedLength) {
+        final newPortion = text.substring(_lastEmittedLength).trim();
+        if (newPortion.isNotEmpty) {
+          _transcriptController.add(newPortion);
+          _lastEmittedLength = text.length;
+        }
+      }
       _partialTranscript = text;
     }
   }
@@ -79,6 +105,7 @@ class AppleSttService {
   Future<void> startListening({String locale = 'en-US'}) async {
     try {
       _partialTranscript = '';
+      _lastEmittedLength = 0;
       await _methodChannel.invokeMethod('start', {'locale': locale});
     } catch (e) {
       _logger.e('Failed to start Apple STT: $e');

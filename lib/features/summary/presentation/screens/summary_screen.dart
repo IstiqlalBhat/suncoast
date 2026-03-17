@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,6 +29,91 @@ class SummaryScreen extends ConsumerStatefulWidget {
 
 class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   bool _isConfirming = false;
+  Timer? _pollTimer;
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      ref.invalidate(summaryProvider(widget.sessionId));
+    });
+  }
+
+  void _stopPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = null;
+  }
+
+  Widget _buildProcessingState(AppColorScheme colors) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.primary.withValues(alpha: 0.1),
+              ),
+              child: Icon(
+                Icons.auto_awesome,
+                color: colors.primary,
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Your summary is being prepared',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "This usually takes a moment. We'll show it here as soon as it's ready, or you can head back and check later.",
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.textSecondary,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                color: colors.primary,
+                strokeWidth: 2,
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _goBackToDashboard,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                child: const Text('Go to Dashboard'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   void _goBackToDashboard() {
     ref.invalidate(activitiesProvider);
@@ -82,13 +168,10 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       body: summaryAsync.when(
         data: (summary) {
           if (summary == null) {
-            return Center(
-              child: Text(
-                'Generating summary...',
-                style: TextStyle(color: colors.textSecondary),
-              ),
-            );
+            _startPolling();
+            return _buildProcessingState(colors);
           }
+          _stopPolling();
 
           return Stack(
             children: [
@@ -339,56 +422,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
             ],
           );
         },
-        loading: () => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Concentric rings loading
-              SizedBox(
-                width: 100,
-                height: 100,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: colors.primary.withValues(alpha: 0.15),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      width: 70,
-                      height: 70,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: colors.primary.withValues(alpha: 0.25),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(
-                        color: colors.primary,
-                        strokeWidth: 2.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Generating session summary...',
-                style: TextStyle(color: colors.textSecondary),
-              ),
-            ],
-          ),
-        ),
+        loading: () => _buildProcessingState(colors),
         error: (e, _) => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,

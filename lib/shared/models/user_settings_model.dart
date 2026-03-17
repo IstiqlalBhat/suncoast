@@ -31,6 +31,7 @@ abstract class UserSettingsModel with _$UserSettingsModel {
     @JsonKey(name: 'confirmation_mode') @Default(ConfirmationMode.smart) ConfirmationMode confirmationMode,
     @Default('en') String language,
     @JsonKey(name: 'use_premium_tts') @Default(true) bool usePremiumTts,
+    @JsonKey(name: 'elevenlabs_enabled') @Default(true) bool elevenlabsEnabled,
     @JsonKey(name: 'stt_engine') @Default(SttEngine.cloud) SttEngine sttEngine,
   }) = _UserSettingsModel;
 
