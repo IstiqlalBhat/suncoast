@@ -732,7 +732,6 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     'see you in the next video',
     'see you next time',
     'bye bye',
-    'you',
   };
 
   bool _isWhisperHallucination(String text) {
