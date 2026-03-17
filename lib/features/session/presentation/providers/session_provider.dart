@@ -720,6 +720,25 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
   }
 
+  static const _whisperHallucinations = {
+    'thank you for watching',
+    'thanks for watching',
+    'thank you for listening',
+    'thanks for listening',
+    'please subscribe',
+    'like and subscribe',
+    'subscribe to',
+    'don\'t forget to subscribe',
+    'see you in the next video',
+    'see you next time',
+    'bye bye',
+  };
+
+  bool _isWhisperHallucination(String text) {
+    final lower = text.toLowerCase().trim();
+    return _whisperHallucinations.any((h) => lower == h || lower == '$h.');
+  }
+
   Future<void> _sendAudioChunk() async {
     if (_audioBuffer.isEmpty || state.isMuted || state.session == null) return;
 
@@ -727,13 +746,20 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     final chunk = Uint8List.fromList(_audioBuffer);
     _audioBuffer.clear();
 
-    _logger.i('Sending audio chunk: ${chunk.length} bytes');
+    // Skip silent chunks to prevent Whisper hallucinations
+    final audioLevel = VoiceActivityGate.computeLevel(chunk);
+    if (audioLevel < 0.02) {
+      _logger.d('Skipping silent audio chunk (level: $audioLevel)');
+      return;
+    }
+
+    _logger.i('Sending audio chunk: ${chunk.length} bytes (level: $audioLevel)');
 
     try {
       final result = await _apiClient.transcribeAudio(chunk);
       final transcriptText = (result['transcript'] as String? ?? '').trim();
 
-      if (transcriptText.isNotEmpty) {
+      if (transcriptText.isNotEmpty && !_isWhisperHallucination(transcriptText)) {
         final newTranscript = '${state.transcript} $transcriptText'.trim();
         state = state.copyWith(transcript: newTranscript);
 
