@@ -135,3 +135,4 @@ jobs:
             - No issues: Submit review with "No critical issues found."
 
           claude_args: '--model claude-opus-4-6 --allowed-tools "mcp__github__get_pull_request_diff,mcp__github__create_pending_pull_request_review,mcp__github__add_pull_request_review_comment_to_pending_review,mcp__github__add_comment_to_pending_review,mcp__github__submit_pending_pull_request_review,mcp__github__pull_request_review_write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"'
+# test
