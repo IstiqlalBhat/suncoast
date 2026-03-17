@@ -1,0 +1,56 @@
+name: Generate PR Description
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  generate-description:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Claude Code PR Description
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            TASK: Generate a PR description based ONLY on the code diff.
+
+            ## INSTRUCTIONS
+            1. Run: `gh pr diff ${{ github.event.pull_request.number }}`
+            2. Analyze the actual code changes
+            3. Generate a structured description
+
+            ## OUTPUT FORMAT
+            Generate markdown with these sections:
+
+            ### Summary
+            2-4 concise bullet point list explaining what this PR does/accomplishes from a user/developer perspective.
+            Bad: "Modified auth.py and added new function"
+            Good: "Adds rate limiting to the login endpoint to prevent brute force attacks"
+
+            ## RULES
+            - Base description ONLY on the git diff output
+            - Do NOT read PR comments, review comments, or issue discussions
+            - Summary should answer "what does this accomplish?" not "what files changed?"
+            - Do not include the diff itself in output
+
+            ## FINAL STEP
+            Append to existing PR body:
+            1. Get current body: `gh pr view ${{ github.event.pull_request.number }} --json body -q .body`
+            2. Generate a short descriptive title (3-6 words) for the summary section based on the changes (e.g., "Rate Limiting for Auth", "Email Thread Sync Fix")
+            3. Combine: existing body + "\n\n---\n\n## " + short title + "\n" + your description
+            4. Update: `gh pr edit ${{ github.event.pull_request.number }} --body "combined content"`
+
+            Use a heredoc for the body to handle multiline content.
+
+          claude_args: '--allowed-tools "Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr edit:*),Bash(git diff:*),Bash(git log:*)"'
