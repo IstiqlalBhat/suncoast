@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_colors.dart';
+import '../../../../core/theme/app_color_scheme.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/theme/gradients.dart';
@@ -36,6 +36,7 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final sessionState = ref.watch(activeSessionProvider);
     final timerText = ref.watch(sessionTimerProvider);
     final sessionId = sessionState.session?.id;
@@ -50,8 +51,8 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
 
     // Waveform color and status adapt to conversation vs push-to-talk mode
     final waveformColor = isConversation
-        ? (isAiSpeaking ? AppColors.chat : AppColors.passive)
-        : (isHolding ? AppColors.passive : AppColors.chat);
+        ? (isAiSpeaking ? c.chat : c.passive)
+        : (isHolding ? c.passive : c.chat);
 
     final statusText = isConversation
         ? (isAiSpeaking
@@ -73,13 +74,13 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
       appBar: SessionAppBar(
         title: AppStrings.voiceChat,
         subtitle: timerText,
-        accentColor: AppColors.chat,
+        accentColor: c.chat,
         onEndSession: () => _endSession(context),
         actions: [
           IconButton(
             icon: Icon(
               _showReferencePanel ? Icons.info : Icons.info_outline,
-              color: AppColors.chat,
+              color: c.chat,
             ),
             onPressed: () {
               setState(() => _showReferencePanel = !_showReferencePanel);
@@ -91,7 +92,7 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
         children: [
           Container(
         decoration: BoxDecoration(
-          gradient: AppGradients.sessionGradient(AppColors.chat),
+          gradient: AppGradients.sessionGradient(c.chat, c),
         ),
         child: SafeArea(
           child: Column(
@@ -132,7 +133,7 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                   child: Text(
                     sessionState.activityTitle,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.textPrimary,
+                      color: c.textPrimary,
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -147,17 +148,17 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                   constraints: const BoxConstraints(maxHeight: 80),
                   padding: const EdgeInsets.all(AppDimensions.paddingS),
                   decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.12),
+                    color: c.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(AppDimensions.radiusM),
                     border: Border.all(
-                      color: AppColors.error.withValues(alpha: 0.3),
+                      color: c.error.withValues(alpha: 0.3),
                     ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.error_outline,
-                        color: AppColors.error,
+                        color: c.error,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
@@ -165,7 +166,7 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                         child: Text(
                           sessionState.error!,
                           style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppColors.textPrimary),
+                              ?.copyWith(color: c.textPrimary),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -182,27 +183,27 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                   ),
                   padding: const EdgeInsets.all(AppDimensions.paddingM),
                   decoration: BoxDecoration(
-                    color: AppColors.card,
+                    color: c.card,
                     borderRadius: BorderRadius.circular(AppDimensions.radiusM),
                     border: Border.all(
-                      color: AppColors.chat.withValues(alpha: 0.3),
+                      color: c.chat.withValues(alpha: 0.3),
                     ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
                           Icon(
                             Icons.auto_awesome,
                             size: 16,
-                            color: AppColors.chat,
+                            color: c.chat,
                           ),
-                          SizedBox(width: 8),
+                          const SizedBox(width: 8),
                           Text(
                             'AI Reference',
                             style: TextStyle(
-                              color: AppColors.chat,
+                              color: c.chat,
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                             ),
@@ -219,7 +220,7 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                         ...referenceCards.map(
                           (card) => _ReferenceCard(
                             card: card,
-                            accentColor: AppColors.chat,
+                            accentColor: c.chat,
                           ),
                         ),
                     ],
@@ -242,15 +243,15 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                                   .read(sessionRepositoryProvider)
                                   .deleteAiEvent(event.id),
                             ),
-                            loading: () => const Center(
+                            loading: () => Center(
                               child: CircularProgressIndicator(
-                                color: AppColors.chat,
+                                color: c.chat,
                               ),
                             ),
-                            error: (e, _) => const Center(
+                            error: (e, _) => Center(
                               child: Text(
                                 'Error loading events',
-                                style: TextStyle(color: AppColors.error),
+                                style: TextStyle(color: c.error),
                               ),
                             ),
                           )
@@ -273,20 +274,20 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                           height: 88,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: isMuted ? null : AppGradients.chatGradient,
+                            gradient: isMuted ? null : AppGradients.chatGradient(c),
                             color: isMuted
-                                ? AppColors.error.withValues(alpha: 0.15)
+                                ? c.error.withValues(alpha: 0.15)
                                 : null,
                             border: Border.all(
                               color: isMuted
-                                  ? AppColors.error.withValues(alpha: 0.5)
-                                  : AppColors.chat.withValues(alpha: 0.8),
+                                  ? c.error.withValues(alpha: 0.5)
+                                  : c.chat.withValues(alpha: 0.8),
                               width: 2,
                             ),
                           ),
                           child: Icon(
                             isMuted ? Icons.mic_off : Icons.mic,
-                            color: isMuted ? AppColors.error : Colors.white,
+                            color: isMuted ? c.error : Colors.white,
                             size: 40,
                           ),
                         ),
@@ -316,12 +317,12 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient:
-                                isHolding ? AppGradients.chatGradient : null,
+                                isHolding ? AppGradients.chatGradient(c) : null,
                             color: isHolding
                                 ? null
-                                : AppColors.chat.withValues(alpha: 0.15),
+                                : c.chat.withValues(alpha: 0.15),
                             border: Border.all(
-                              color: AppColors.chat.withValues(
+                              color: c.chat.withValues(
                                 alpha: isHolding ? 0.8 : 0.3,
                               ),
                               width: 2,
@@ -329,7 +330,7 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                           ),
                           child: Icon(
                             isHolding ? Icons.mic : Icons.mic_none,
-                            color: isHolding ? Colors.white : AppColors.chat,
+                            color: isHolding ? Colors.white : c.chat,
                             size: 40,
                           ),
                         ),
@@ -338,14 +339,14 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
                     // End session
                     TextButton.icon(
                       onPressed: () => _endSession(context),
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.stop,
-                        color: AppColors.error,
+                        color: c.error,
                         size: 18,
                       ),
-                      label: const Text(
+                      label: Text(
                         AppStrings.endSession,
-                        style: TextStyle(color: AppColors.error),
+                        style: TextStyle(color: c.error),
                       ),
                     ),
                   ],
@@ -358,16 +359,16 @@ class _VoiceChatScreenState extends ConsumerState<VoiceChatScreen> {
           if (_isEnding)
             Container(
               color: Colors.black54,
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: AppColors.chat),
-                    SizedBox(height: AppDimensions.paddingM),
+                    CircularProgressIndicator(color: c.chat),
+                    const SizedBox(height: AppDimensions.paddingM),
                     Text(
                       'Ending session...',
                       style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: c.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
@@ -403,14 +404,15 @@ class _ReferenceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final type = (card['type'] as String? ?? 'info').toLowerCase();
     final title = card['title'] as String? ?? 'Reference';
     final content = card['content'] as String? ?? '';
     final subtitle = card['subtitle'] as String?;
     final cardColor = switch (type) {
-      'task' => AppColors.success,
-      'contact' => AppColors.info,
-      'suggestion' => AppColors.textSecondary,
+      'task' => c.success,
+      'contact' => c.info,
+      'suggestion' => c.textSecondary,
       _ => accentColor,
     };
 
@@ -429,7 +431,7 @@ class _ReferenceCard extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: AppColors.textPrimary,
+              color: c.textPrimary,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -439,7 +441,7 @@ class _ReferenceCard extends StatelessWidget {
               subtitle,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+              ).textTheme.bodySmall?.copyWith(color: c.textSecondary),
             ),
           ],
           if (content.isNotEmpty) ...[
@@ -448,7 +450,7 @@ class _ReferenceCard extends StatelessWidget {
               content,
               style: Theme.of(
                 context,
-              ).textTheme.bodySmall?.copyWith(color: AppColors.textPrimary),
+              ).textTheme.bodySmall?.copyWith(color: c.textPrimary),
             ),
           ],
         ],

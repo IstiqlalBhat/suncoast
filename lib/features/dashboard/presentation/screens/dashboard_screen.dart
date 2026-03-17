@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_colors.dart';
+import '../../../../core/theme/app_color_scheme.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/models/activity_model.dart';
 import '../../../../shared/providers/auth_providers.dart';
+import '../../../../shared/widgets/session_type_icon.dart';
 import '../../../session/presentation/providers/session_provider.dart';
 import '../providers/dashboard_provider.dart';
 import '../widgets/activity_card.dart';
@@ -50,23 +51,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       );
       return;
     }
-
-    final latestActivityResult = await ref
-        .read(activityRepositoryProvider)
-        .getActivity(activity.id);
-
+    final latestActivityResult =
+        await ref.read(activityRepositoryProvider).getActivity(activity.id);
     if (!latestActivityResult.isSuccess) {
       final message = latestActivityResult.when(
         success: (_) => 'Failed to open activity.',
         failure: (errorMessage, _) => errorMessage,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
       return;
     }
-
     final latestActivity = latestActivityResult.dataOrNull ?? activity;
     final latestSessionResult = await ref
         .read(sessionRepositoryProvider)
@@ -74,9 +70,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           activityId: latestActivity.id,
           userId: userId,
         );
-
     if (!mounted) return;
-
     final latestCompletedSession = latestSessionResult.dataOrNull;
     if (latestCompletedSession != null) {
       context.push(
@@ -84,31 +78,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       );
       return;
     }
-
     if (!latestSessionResult.isSuccess) {
       final message = latestSessionResult.when(
         success: (_) => 'Failed to open activity.',
         failure: (errorMessage, _) => errorMessage,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
       return;
     }
-
     if (latestActivity.status == ActivityStatus.completed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No completed session summary found.')),
       );
       return;
     }
-
     final route = latestActivity.type.routeSegment;
     if (!mounted) return;
     context.push('/session/${latestActivity.id}/$route');
   }
 
   Future<void> _confirmDeleteActivity(ActivityModel activity) async {
+    final c = context.colors;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -123,25 +114,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: AppColors.error),
-            ),
+            child:
+                Text('Delete', style: TextStyle(color: c.error)),
           ),
         ],
       ),
     );
-
     if (confirmed != true || !mounted) return;
-
-    final message = await ref
-        .read(activitiesProvider.notifier)
-        .deleteActivity(activity.id);
+    final message =
+        await ref.read(activitiesProvider.notifier).deleteActivity(activity.id);
     if (!mounted || message == null) return;
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _markActivityCompleted(ActivityModel activity) async {
@@ -150,7 +134,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Mark activity completed'),
         content: Text(
-          'Mark "${activity.title}" as completed? If a finished session exists, tapping this activity will open its summary.',
+          'Mark "${activity.title}" as completed?',
         ),
         actions: [
           TextButton(
@@ -164,24 +148,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ],
       ),
     );
-
     if (confirmed != true || !mounted) return;
-
     final message = await ref
         .read(activitiesProvider.notifier)
         .updateActivityStatus(activity.id, ActivityStatus.completed);
-
     if (!mounted) return;
-
-    if (message != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-      return;
-    }
-
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Activity marked completed.')),
+      SnackBar(content: Text(message ?? 'Activity marked completed.')),
     );
   }
 
@@ -194,54 +167,69 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final activitiesAsync = ref.watch(activitiesProvider);
     final selectedFilter = ref.watch(selectedTypeFilterProvider);
     final user = ref.watch(currentUserProvider);
-    final userName =
-        user?.userMetadata?['name'] as String? ??
+    final userName = user?.userMetadata?['name'] as String? ??
         user?.email?.split('@').first ??
         'there';
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateActivitySheet(context),
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add, color: Colors.white),
+      floatingActionButton: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: c.primary.withValues(alpha: 0.25),
+              blurRadius: 24,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          onPressed: () => _showCreateActivitySheet(context),
+          backgroundColor: c.primary,
+          elevation: 0,
+          shape: const CircleBorder(),
+          child: Icon(Icons.add_rounded, color: c.onPrimary, size: 28),
+        ),
       ),
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            const SizedBox(height: 16),
+
+            // ── Greeting ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     '$_greeting,',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textTertiary,
-                    ),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(color: c.textTertiary),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     userName,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                    style: Theme.of(context).textTheme.displayMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
 
-            // Search bar
+            // ── Search ──
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppDimensions.paddingM,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
@@ -256,20 +244,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           },
                         )
                       : null,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
                   filled: true,
-                  fillColor: AppColors.surface,
+                  fillColor: c.surface,
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.divider),
+                    borderRadius: BorderRadius.circular(999),
+                    borderSide: BorderSide(color: c.divider),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.divider),
+                    borderRadius: BorderRadius.circular(999),
+                    borderSide: BorderSide(color: c.divider),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.primary),
+                    borderRadius: BorderRadius.circular(999),
+                    borderSide:
+                        BorderSide(color: c.primary, width: 1.5),
                   ),
                 ),
                 onChanged: (value) {
@@ -278,33 +267,88 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 },
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 18),
 
-            // Type filter chips
+            // ── Unified stat bar ──
+            activitiesAsync.whenOrNull(
+                  data: (activities) {
+                    final pending = activities
+                        .where((a) => a.status == ActivityStatus.pending)
+                        .length;
+                    final inProgress = activities
+                        .where((a) => a.status == ActivityStatus.inProgress)
+                        .length;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        decoration: BoxDecoration(
+                          color: c.card,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: IntrinsicHeight(
+                          child: Row(
+                            children: [
+                              _StatCell(
+                                count: activities.length,
+                                label: 'sessions',
+                                accentColor: c.primary,
+                              ),
+                              VerticalDivider(
+                                width: 1,
+                                thickness: 1,
+                                color: c.divider.withValues(alpha: 0.5),
+                                indent: 6,
+                                endIndent: 6,
+                              ),
+                              _StatCell(
+                                count: pending,
+                                label: 'pending',
+                                accentColor: c.warning,
+                              ),
+                              VerticalDivider(
+                                width: 1,
+                                thickness: 1,
+                                color: c.divider.withValues(alpha: 0.5),
+                                indent: 6,
+                                endIndent: 6,
+                              ),
+                              _StatCell(
+                                count: inProgress,
+                                label: 'active',
+                                accentColor: c.success,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ) ??
+                const SizedBox.shrink(),
+            const SizedBox(height: 18),
+
+            // ── Editorial text-tab filters ──
             SizedBox(
-              height: 40,
+              height: 36,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.paddingM,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 children: [
-                  _FilterChip(
+                  _TabFilter(
                     label: 'All',
                     isSelected: selectedFilter == null,
-                    color: AppColors.primary,
+                    color: c.primary,
                     onTap: () {
-                      ref.read(selectedTypeFilterProvider.notifier).state =
-                          null;
+                      ref.read(selectedTypeFilterProvider.notifier).state = null;
                       ref.read(activitiesProvider.notifier).filterByType(null);
                     },
                   ),
-                  const SizedBox(width: 8),
-                  _FilterChip(
+                  const SizedBox(width: 28),
+                  _TabFilter(
                     label: 'Passive',
-                    icon: Icons.hearing,
                     isSelected: selectedFilter == ActivityType.passive,
-                    color: AppColors.passive,
+                    color: c.passive,
                     onTap: () {
                       ref.read(selectedTypeFilterProvider.notifier).state =
                           ActivityType.passive;
@@ -313,12 +357,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           .filterByType(ActivityType.passive);
                     },
                   ),
-                  const SizedBox(width: 8),
-                  _FilterChip(
+                  const SizedBox(width: 28),
+                  _TabFilter(
                     label: 'Chat',
-                    icon: Icons.chat_bubble_outline,
                     isSelected: selectedFilter == ActivityType.twoway,
-                    color: AppColors.chat,
+                    color: c.chat,
                     onTap: () {
                       ref.read(selectedTypeFilterProvider.notifier).state =
                           ActivityType.twoway;
@@ -327,12 +370,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           .filterByType(ActivityType.twoway);
                     },
                   ),
-                  const SizedBox(width: 8),
-                  _FilterChip(
+                  const SizedBox(width: 28),
+                  _TabFilter(
                     label: 'Media',
-                    icon: Icons.camera_alt_outlined,
                     isSelected: selectedFilter == ActivityType.media,
-                    color: AppColors.media,
+                    color: c.media,
                     onTap: () {
                       ref.read(selectedTypeFilterProvider.notifier).state =
                           ActivityType.media;
@@ -346,48 +388,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             const SizedBox(height: 8),
 
-            // Stats row
-            activitiesAsync.whenOrNull(
-                  data: (activities) {
-                    final pending = activities
-                        .where((a) => a.status == ActivityStatus.pending)
-                        .length;
-                    final inProgress = activities
-                        .where((a) => a.status == ActivityStatus.inProgress)
-                        .length;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        children: [
-                          _StatBadge(
-                            count: activities.length,
-                            label: 'Total',
-                            color: AppColors.primary,
-                          ),
-                          const SizedBox(width: 12),
-                          _StatBadge(
-                            count: pending,
-                            label: 'Pending',
-                            color: AppColors.warning,
-                          ),
-                          const SizedBox(width: 12),
-                          _StatBadge(
-                            count: inProgress,
-                            label: 'Active',
-                            color: AppColors.success,
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ) ??
-                const SizedBox.shrink(),
-            const SizedBox(height: 4),
-
-            // Activity list
+            // ── Activity list ──
             Expanded(
               child: activitiesAsync.when(
                 data: (activities) {
@@ -396,28 +397,34 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.assignment_outlined,
+                          SessionTypeIcon(
+                            mode: 'passive',
+                            color: c.textTertiary.withValues(alpha: 0.3),
                             size: 64,
-                            color: AppColors.textTertiary.withValues(
-                              alpha: 0.5,
-                            ),
                           ),
-                          const SizedBox(height: AppDimensions.paddingM),
+                          const SizedBox(height: 20),
                           Text(
                             AppStrings.noActivities,
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(color: AppColors.textTertiary),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(color: c.textTertiary),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Tap + to create your first session',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: c.textTertiary.withValues(alpha: 0.7),
+                            ),
                           ),
                         ],
                       ),
                     );
                   }
-
                   return RefreshIndicator(
                     onRefresh: () =>
                         ref.read(activitiesProvider.notifier).refresh(),
-                    color: AppColors.primary,
+                    color: c.primary,
                     child: ListView.builder(
                       padding: const EdgeInsets.only(
                         bottom: AppDimensions.paddingXXL + 80,
@@ -425,38 +432,53 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       itemCount: activities.length,
                       itemBuilder: (context, index) {
                         final activity = activities[index];
-                        return ActivityCard(
-                          activity: activity,
-                          onTap: () => _openActivity(activity),
-                          onMarkCompleted: () => _markActivityCompleted(activity),
-                          onDelete: () => _confirmDeleteActivity(activity),
+                        return Dismissible(
+                          key: ValueKey(activity.id),
+                          direction: DismissDirection.endToStart,
+                          confirmDismiss: (_) async {
+                            await _confirmDeleteActivity(activity);
+                            return false;
+                          },
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 28),
+                            margin: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: c.error.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Icon(Icons.delete_outline,
+                                color: c.error, size: 26),
+                          ),
+                          child: ActivityCard(
+                            activity: activity,
+                            onTap: () => _openActivity(activity),
+                            onMarkCompleted: () =>
+                                _markActivityCompleted(activity),
+                            onDelete: () => _confirmDeleteActivity(activity),
+                          ),
                         );
                       },
                     ),
                   );
                 },
-                loading: () => const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
+                loading: () => Center(
+                  child: CircularProgressIndicator(color: c.primary),
                 ),
                 error: (error, _) => Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 48,
-                        color: AppColors.error,
-                      ),
-                      const SizedBox(height: AppDimensions.paddingM),
+                      Icon(Icons.error_outline, size: 48, color: c.error),
+                      const SizedBox(height: 16),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Text(
-                          error.toString(),
-                          style: Theme.of(context).textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
-                        ),
+                        child: Text(error.toString(),
+                            style: Theme.of(context).textTheme.bodyMedium,
+                            textAlign: TextAlign.center),
                       ),
-                      const SizedBox(height: AppDimensions.paddingM),
+                      const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () =>
                             ref.read(activitiesProvider.notifier).refresh(),
@@ -474,96 +496,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final IconData? icon;
-  final bool isSelected;
-  final Color color;
-  final VoidCallback onTap;
+// ═══════════════════════════════════════════════════════════════
+// ── Stat Cell (inside unified stat bar) ──────────────────────
+// ═══════════════════════════════════════════════════════════════
 
-  const _FilterChip({
-    required this.label,
-    this.icon,
-    required this.isSelected,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.2) : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-          border: Border.all(
-            color: isSelected ? color : AppColors.divider,
-            width: isSelected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(
-                icon,
-                size: 14,
-                color: isSelected ? color : AppColors.textTertiary,
-              ),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? color : AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatBadge extends StatelessWidget {
+class _StatCell extends StatelessWidget {
   final int count;
   final String label;
-  final Color color;
+  final Color accentColor;
 
-  const _StatBadge({
+  const _StatCell({
     required this.count,
     required this.label,
-    required this.color,
+    required this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
+    final c = context.colors;
+    return Expanded(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             '$count',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 22,
               fontWeight: FontWeight.w700,
-              color: color,
+              color: accentColor,
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(height: 2),
           Text(
             label,
-            style: TextStyle(fontSize: 11, color: color.withValues(alpha: 0.8)),
+            style: TextStyle(
+              fontSize: 11,
+              color: c.textTertiary,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.5,
+            ),
           ),
         ],
       ),
@@ -571,9 +542,64 @@ class _StatBadge extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ── Text Tab Filter (editorial underline style) ──────────────
+// ═══════════════════════════════════════════════════════════════
+
+class _TabFilter extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _TabFilter({
+    required this.label,
+    required this.isSelected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+              color: isSelected ? color : c.textSecondary,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 6),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+            width: isSelected ? 18 : 0,
+            height: 2.5,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ── Create Activity Sheet ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
 class _CreateActivitySheet extends ConsumerStatefulWidget {
   final void Function(ActivityModel activity) onCreated;
-
   const _CreateActivitySheet({required this.onCreated});
 
   @override
@@ -597,9 +623,7 @@ class _CreateActivitySheetState extends ConsumerState<_CreateActivitySheet> {
   Future<void> _create() async {
     final title = _titleController.text.trim();
     if (title.isEmpty) return;
-
     setState(() => _isCreating = true);
-
     final repo = ref.read(activityRepositoryProvider);
     final result = await repo.createActivity(
       title: title,
@@ -608,9 +632,7 @@ class _CreateActivitySheetState extends ConsumerState<_CreateActivitySheet> {
           ? null
           : _locationController.text.trim(),
     );
-
     if (!mounted) return;
-
     result.when(
       success: (activity) {
         Navigator.of(context).pop();
@@ -618,218 +640,150 @@ class _CreateActivitySheetState extends ConsumerState<_CreateActivitySheet> {
       },
       failure: (message, _) {
         setState(() => _isCreating = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       },
     );
   }
 
+  Color _typeColor(ActivityType t, AppColorScheme c) => switch (t) {
+    ActivityType.passive => c.passive,
+    ActivityType.twoway => c.chat,
+    ActivityType.media => c.media,
+  };
+
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Container(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle bar
             Center(
               child: Container(
-                width: 40,
-                height: 4,
+                width: 40, height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2),
+                  color: c.divider,
+                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-
+            const SizedBox(height: 20),
             Text(
               'Quick Start Session',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700, color: c.textPrimary,
               ),
             ),
-            const SizedBox(height: 20),
-
-            // Title field
+            const SizedBox(height: 24),
             TextField(
               controller: _titleController,
               autofocus: true,
-              style: const TextStyle(color: AppColors.textPrimary),
+              style: TextStyle(color: c.textPrimary),
               decoration: InputDecoration(
                 hintText: 'What are you working on?',
                 prefixIcon: const Icon(Icons.edit_outlined, size: 20),
-                filled: true,
-                fillColor: AppColors.card,
+                filled: true, fillColor: c.card,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(999),
                   borderSide: BorderSide.none,
                 ),
               ),
               textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 12),
-
-            // Location field
             TextField(
               controller: _locationController,
-              style: const TextStyle(color: AppColors.textPrimary),
+              style: TextStyle(color: c.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Location (optional)',
                 prefixIcon: const Icon(Icons.location_on_outlined, size: 20),
-                filled: true,
-                fillColor: AppColors.card,
+                filled: true, fillColor: c.card,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(999),
                   borderSide: BorderSide.none,
                 ),
               ),
               textInputAction: TextInputAction.done,
             ),
-            const SizedBox(height: 16),
-
-            // Session type selector
+            const SizedBox(height: 24),
             Text(
-              'Session Type',
+              'SESSION TYPE',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.textTertiary,
+                color: c.textTertiary,
                 fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
+                letterSpacing: 1.2, fontSize: 10,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
+            // ── Type selectors with custom icons ──
             Row(
-              children: [
-                _TypeOption(
-                  icon: Icons.hearing,
-                  label: 'Passive',
-                  color: AppColors.passive,
-                  isSelected: _selectedType == ActivityType.passive,
-                  onTap: () =>
-                      setState(() => _selectedType = ActivityType.passive),
-                ),
-                const SizedBox(width: 10),
-                _TypeOption(
-                  icon: Icons.chat_bubble_outline,
-                  label: 'Chat',
-                  color: AppColors.chat,
-                  isSelected: _selectedType == ActivityType.twoway,
-                  onTap: () =>
-                      setState(() => _selectedType = ActivityType.twoway),
-                ),
-                const SizedBox(width: 10),
-                _TypeOption(
-                  icon: Icons.camera_alt_outlined,
-                  label: 'Media',
-                  color: AppColors.media,
-                  isSelected: _selectedType == ActivityType.media,
-                  onTap: () =>
-                      setState(() => _selectedType = ActivityType.media),
-                ),
-              ],
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: ActivityType.values.map((type) {
+                final tc = _typeColor(type, c);
+                final isSel = _selectedType == type;
+                final label = switch (type) {
+                  ActivityType.passive => 'Passive',
+                  ActivityType.twoway => 'Chat',
+                  ActivityType.media => 'Media',
+                };
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedType = type),
+                  child: Column(
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 68, height: 68,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isSel ? tc.withValues(alpha: 0.15) : c.surfaceLight,
+                          border: Border.all(
+                            color: isSel ? tc : c.divider,
+                            width: isSel ? 2 : 1,
+                          ),
+                        ),
+                        child: Center(
+                          child: SessionTypeIcon(mode: type.name, color: isSel ? tc : c.textTertiary, size: 30),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(label, style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
+                        color: isSel ? tc : c.textSecondary,
+                      )),
+                    ],
+                  ),
+                );
+              }).toList(),
             ),
-            const SizedBox(height: 24),
-
-            // Start button
+            const SizedBox(height: 28),
             SizedBox(
-              width: double.infinity,
-              height: 50,
+              width: double.infinity, height: 52,
               child: ElevatedButton(
                 onPressed: _isCreating ? null : _create,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  backgroundColor: c.primary,
+                  foregroundColor: c.onPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
                   elevation: 0,
                 ),
                 child: _isCreating
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Start Session',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                    ? SizedBox(width: 22, height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.5, color: c.onPrimary))
+                    : const Text('Start Session',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TypeOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _TypeOption({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: isSelected ? color.withValues(alpha: 0.15) : AppColors.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? color : AppColors.divider,
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: isSelected ? color : AppColors.textTertiary,
-                size: 24,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? color : AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

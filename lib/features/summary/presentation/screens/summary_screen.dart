@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../../../core/constants/app_colors.dart';
+import '../../../../core/theme/app_color_scheme.dart';
 import '../../../../core/constants/app_dimensions.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../features/session/presentation/providers/session_provider.dart';
 import '../../../../shared/models/session_summary_model.dart';
-import '../../../../shared/widgets/gradient_button.dart';
 import '../../../dashboard/presentation/providers/dashboard_provider.dart';
 import '../../../history/presentation/providers/history_provider.dart';
 import '../providers/summary_provider.dart';
@@ -39,15 +38,19 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final summaryAsync = ref.watch(summaryProvider(widget.sessionId));
-    final activityAsync = ref.watch(summaryActivityProvider(widget.activityId));
+    final activityAsync =
+        ref.watch(summaryActivityProvider(widget.activityId));
     final sessionAsync = ref.watch(sessionDetailsProvider(widget.sessionId));
 
     final activityTitle = activityAsync.valueOrNull?.title ?? 'Field session';
     final sessionDuration =
         summaryAsync.valueOrNull?.durationSeconds ??
         sessionAsync.valueOrNull?.endedAt
-            ?.difference(sessionAsync.valueOrNull?.startedAt ?? DateTime.now())
+            ?.difference(
+              sessionAsync.valueOrNull?.startedAt ?? DateTime.now(),
+            )
             .inSeconds;
 
     return Scaffold(
@@ -56,13 +59,22 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
         automaticallyImplyLeading: false,
         actions: [
           if (summaryAsync.valueOrNull != null)
-            IconButton(
-              icon: const Icon(Icons.share, color: AppColors.primary),
-              tooltip: 'Share summary',
-              onPressed: () => _showShareOptions(
-                summaryAsync.valueOrNull!,
-                activityTitle,
-                sessionDuration,
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.deepForest.withValues(alpha: 0.6),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.share, color: colors.primary, size: 20),
+                tooltip: 'Share summary',
+                onPressed: () => _showShareOptions(
+                  summaryAsync.valueOrNull!,
+                  activityTitle,
+                  sessionDuration,
+                ),
               ),
             ),
         ],
@@ -70,158 +82,309 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       body: summaryAsync.when(
         data: (summary) {
           if (summary == null) {
-            return const Center(
+            return Center(
               child: Text(
                 'Generating summary...',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(color: colors.textSecondary),
               ),
             );
           }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(AppDimensions.paddingM),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(AppDimensions.paddingM),
+          return Stack(
+            children: [
+              // Decorative background
+              Positioned(
+                top: -60,
+                right: -40,
+                child: Container(
+                  width: 160,
+                  height: 160,
                   decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+                    shape: BoxShape.circle,
+                    color: colors.deepForest.withValues(alpha: 0.35),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        activityTitle,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w700,
+                ),
+              ),
+              Positioned(
+                bottom: 200,
+                left: -30,
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: colors.observation.withValues(alpha: 0.1),
+                    ),
+                  ),
+                ),
+              ),
+
+              SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Header card with circular timer ──
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: colors.card,
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  activityTitle,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(
+                                        color: colors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                                if (sessionDuration != null) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _formatDuration(sessionDuration),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          color: colors.textSecondary,
+                                        ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          // Circular timer indicator
+                          if (sessionDuration != null)
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: colors.deepForest,
+                                border: Border.all(
+                                  color: colors.primary.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Icon(
+                                Icons.timer_outlined,
+                                color: colors.primary,
+                                size: 22,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // ── Session Overview ──
+                    if (summary.observationSummary.trim().isNotEmpty) ...[
+                      _SectionHeader(
+                        icon: Icons.description_outlined,
+                        title: 'Session Overview',
+                        color: colors.primaryLight,
+                      ),
+                      const SizedBox(height: 12),
+                      _SummaryCard(
+                        text: summary.observationSummary.trim(),
+                        color: colors.primaryLight,
+                        onTap: () => _editObservationSummary(summary),
+                      ),
+                      const SizedBox(height: 28),
+                    ],
+
+                    // ── Key Observations ──
+                    _SectionHeader(
+                      icon: Icons.visibility,
+                      title: AppStrings.keyObservations,
+                      color: colors.observation,
+                      onAdd: () => _addObservation(summary),
+                    ),
+                    const SizedBox(height: 12),
+                    if (summary.keyObservations.isEmpty)
+                      const _EmptySummaryState(
+                        message: 'No observations captured.',
+                      )
+                    else
+                      ...summary.keyObservations.asMap().entries.map(
+                        (entry) => _NumberedSummaryItem(
+                          number: entry.key + 1,
+                          text: entry.value,
+                          color: colors.observation,
+                          onTap: () =>
+                              _editObservation(summary, entry.key),
+                          onDismissed: () =>
+                              _deleteObservation(summary, entry.key),
                         ),
                       ),
-                      if (sessionDuration != null) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.timer_outlined,
-                              color: AppColors.primary,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Elapsed time: ${_formatDuration(sessionDuration)}',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ],
+                    const SizedBox(height: 28),
+
+                    // ── Actions Taken ──
+                    _SectionHeader(
+                      icon: Icons.bolt,
+                      title: AppStrings.actionsTaken,
+                      color: colors.action,
+                      onAdd: () => _addAction(summary),
+                    ),
+                    const SizedBox(height: 12),
+                    if (summary.actionsTaken.isEmpty &&
+                        summary.actionStatuses.isEmpty)
+                      const _EmptySummaryState(
+                        message: 'No actions were triggered.',
+                      )
+                    else
+                      ..._buildActionItems(summary).asMap().entries.map(
+                        (entry) => _ActionSummaryItem(
+                          action: entry.value,
+                          index: entry.key + 1,
+                          onTap: () =>
+                              _editAction(summary, entry.key),
+                          onDismissed: () =>
+                              _deleteAction(summary, entry.key),
                         ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppDimensions.paddingL),
+                      ),
+                    const SizedBox(height: 28),
 
-                if (summary.observationSummary.trim().isNotEmpty) ...[
-                  const _SectionHeader(
-                    icon: Icons.description_outlined,
-                    title: 'Session Overview',
-                    color: AppColors.primaryLight,
-                  ),
-                  const SizedBox(height: AppDimensions.paddingS),
-                  _SummaryItem(
-                    text: summary.observationSummary.trim(),
-                    color: AppColors.primaryLight,
-                    onTap: () => _editObservationSummary(summary),
-                  ),
-                  const SizedBox(height: AppDimensions.paddingL),
-                ],
-
-                _SectionHeader(
-                  icon: Icons.visibility,
-                  title: AppStrings.keyObservations,
-                  color: AppColors.observation,
-                  onAdd: () => _addObservation(summary),
-                ),
-                const SizedBox(height: AppDimensions.paddingS),
-                if (summary.keyObservations.isEmpty)
-                  const _EmptySummaryState(message: 'No observations captured.')
-                else
-                  ...summary.keyObservations.asMap().entries.map(
-                    (entry) => _SummaryItem(
-                      text: entry.value,
-                      color: AppColors.observation,
-                      onTap: () => _editObservation(summary, entry.key),
-                      onDismissed: () =>
-                          _deleteObservation(summary, entry.key),
+                    // ── Pending Follow-ups ──
+                    _SectionHeader(
+                      icon: Icons.flag,
+                      title: AppStrings.pendingFollowUps,
+                      color: colors.warning,
+                      onAdd: () => _addFollowUp(summary),
                     ),
-                  ),
-                const SizedBox(height: AppDimensions.paddingL),
+                    const SizedBox(height: 12),
+                    if (summary.followUps.isEmpty)
+                      const _EmptySummaryState(
+                        message: 'No follow-ups were identified.',
+                      )
+                    else
+                      ...summary.followUps.asMap().entries.map(
+                        (entry) => _FollowUpItem(
+                          followUp: entry.value,
+                          index: entry.key + 1,
+                          onTap: () =>
+                              _editFollowUp(summary, entry.key),
+                          onDismissed: () =>
+                              _deleteFollowUp(summary, entry.key),
+                        ),
+                      ),
+                    const SizedBox(height: 36),
 
-                _SectionHeader(
-                  icon: Icons.bolt,
-                  title: AppStrings.actionsTaken,
-                  color: AppColors.action,
-                  onAdd: () => _addAction(summary),
-                ),
-                const SizedBox(height: AppDimensions.paddingS),
-                if (summary.actionsTaken.isEmpty &&
-                    summary.actionStatuses.isEmpty)
-                  const _EmptySummaryState(
-                    message: 'No actions were triggered.',
-                  )
-                else
-                  ..._buildActionItems(summary).asMap().entries.map(
-                    (entry) => _ActionSummaryItem(
-                      action: entry.value,
-                      onTap: () => _editAction(summary, entry.key),
-                      onDismissed: () => _deleteAction(summary, entry.key),
+                    // ── Confirm button (pill with glow) ──
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                colors.primary.withValues(alpha: 0.2),
+                            blurRadius: 20,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              _isConfirming ? null : _confirmAndClose,
+                          icon: _isConfirming
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: colors.onPrimary,
+                                  ),
+                                )
+                              : const Icon(Icons.check_circle, size: 20),
+                          label: Text(
+                            _isConfirming
+                                ? 'Confirming...'
+                                : AppStrings.confirmAndClose,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: colors.primary,
+                            foregroundColor: colors.onPrimary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            elevation: 0,
+                            textStyle: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                const SizedBox(height: AppDimensions.paddingL),
-
-                _SectionHeader(
-                  icon: Icons.flag,
-                  title: AppStrings.pendingFollowUps,
-                  color: AppColors.warning,
-                  onAdd: () => _addFollowUp(summary),
+                    const SizedBox(height: AppDimensions.paddingXL),
+                  ],
                 ),
-                const SizedBox(height: AppDimensions.paddingS),
-                if (summary.followUps.isEmpty)
-                  const _EmptySummaryState(
-                    message: 'No follow-ups were identified.',
-                  )
-                else
-                  ...summary.followUps.asMap().entries.map(
-                    (entry) => _FollowUpItem(
-                      followUp: entry.value,
-                      onTap: () => _editFollowUp(summary, entry.key),
-                      onDismissed: () =>
-                          _deleteFollowUp(summary, entry.key),
-                    ),
-                  ),
-                const SizedBox(height: AppDimensions.paddingXL),
-
-                GradientButton(
-                  label: AppStrings.confirmAndClose,
-                  icon: Icons.check_circle,
-                  isLoading: _isConfirming,
-                  onPressed: _isConfirming ? null : _confirmAndClose,
-                ),
-                const SizedBox(height: AppDimensions.paddingXL),
-              ],
-            ),
+              ),
+            ],
           );
         },
-        loading: () => const Center(
+        loading: () => Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: AppColors.primary),
-              SizedBox(height: AppDimensions.paddingM),
+              // Concentric rings loading
+              SizedBox(
+                width: 100,
+                height: 100,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colors.primary.withValues(alpha: 0.15),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colors.primary.withValues(alpha: 0.25),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(
+                        color: colors.primary,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
               Text(
                 'Generating session summary...',
-                style: TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(color: colors.textSecondary),
               ),
             ],
           ),
@@ -230,7 +393,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+              Icon(
+                Icons.error_outline,
+                color: colors.error,
+                size: 48,
+              ),
               const SizedBox(height: AppDimensions.paddingM),
               Text(
                 'Failed to generate summary',
@@ -239,6 +406,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
               const SizedBox(height: AppDimensions.paddingM),
               ElevatedButton(
                 onPressed: _goBackToDashboard,
+                style: ElevatedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
                 child: const Text('Back to Dashboard'),
               ),
             ],
@@ -248,7 +420,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     );
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+  // ── All business logic methods (unchanged) ─────────────────
+  // ═══════════════════════════════════════════════════════════════
 
   List<_ActionSummaryData> _buildActionItems(SessionSummaryModel summary) {
     if (summary.actionStatuses.isNotEmpty) {
@@ -264,9 +438,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
           )
           .toList();
     }
-
     return summary.actionsTaken
-        .map((action) => _ActionSummaryData(label: action, status: 'completed'))
+        .map(
+          (action) =>
+              _ActionSummaryData(label: action, status: 'completed'),
+        )
         .toList();
   }
 
@@ -281,12 +457,16 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     );
   }
 
-  Future<String?> _showEditTextDialog(String current, {String label = 'Text'}) {
+  Future<String?> _showEditTextDialog(
+    String current, {
+    String label = 'Text',
+  }) {
     final controller = TextEditingController(text: current);
+    final colors = context.colors;
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
+        backgroundColor: colors.card,
         title: Text('Edit $label'),
         content: TextFormField(
           controller: controller,
@@ -312,10 +492,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   }
 
   Future<bool> _showDeleteConfirmation() async {
+    final colors = context.colors;
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.card,
+        backgroundColor: colors.card,
         title: const Text('Delete Item'),
         content: const Text('Are you sure you want to delete this item?'),
         actions: [
@@ -325,7 +506,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            style: TextButton.styleFrom(foregroundColor: colors.error),
             child: const Text('Delete'),
           ),
         ],
@@ -339,13 +520,15 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
         TextEditingController(text: current?.description ?? '');
     String priority = current?.priority ?? 'medium';
     DateTime? dueDate = current?.dueDate;
+    final colors = context.colors;
 
     return showDialog<FollowUpModel>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: AppColors.card,
-          title: Text(current == null ? 'Add Follow-Up' : 'Edit Follow-Up'),
+          backgroundColor: colors.card,
+          title:
+              Text(current == null ? 'Add Follow-Up' : 'Edit Follow-Up'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -370,7 +553,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   DropdownMenuItem(value: 'medium', child: Text('Medium')),
                   DropdownMenuItem(value: 'high', child: Text('High')),
                 ],
-                onChanged: (v) => setDialogState(() => priority = v ?? priority),
+                onChanged: (v) =>
+                    setDialogState(() => priority = v ?? priority),
               ),
               const SizedBox(height: 16),
               ListTile(
@@ -401,7 +585,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                     if (dueDate != null)
                       IconButton(
                         icon: const Icon(Icons.clear, size: 20),
-                        onPressed: () => setDialogState(() => dueDate = null),
+                        onPressed: () =>
+                            setDialogState(() => dueDate = null),
                       ),
                   ],
                 ),
@@ -433,8 +618,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     );
   }
 
-  // ── Observation Summary ─────────────────────────────────────────────
-
   Future<void> _editObservationSummary(SessionSummaryModel summary) async {
     final newText = await _showEditTextDialog(
       summary.observationSummary,
@@ -444,8 +627,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     _updateSummaryField({'observation_summary': newText});
   }
 
-  // ── Key Observations ────────────────────────────────────────────────
-
   Future<void> _addObservation(SessionSummaryModel summary) async {
     final text = await _showEditTextDialog('', label: 'Observation');
     if (text == null || text.trim().isEmpty) return;
@@ -454,7 +635,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   }
 
   Future<void> _editObservation(
-      SessionSummaryModel summary, int index) async {
+    SessionSummaryModel summary,
+    int index,
+  ) async {
     final text = await _showEditTextDialog(
       summary.keyObservations[index],
       label: 'Observation',
@@ -466,18 +649,17 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   }
 
   Future<void> _deleteObservation(
-      SessionSummaryModel summary, int index) async {
+    SessionSummaryModel summary,
+    int index,
+  ) async {
     final confirmed = await _showDeleteConfirmation();
     if (!confirmed) {
-      // Re-render to undo the dismiss animation
       ref.invalidate(summaryProvider(widget.sessionId));
       return;
     }
     final updated = [...summary.keyObservations]..removeAt(index);
     _updateSummaryField({'key_observations': updated});
   }
-
-  // ── Actions ─────────────────────────────────────────────────────────
 
   Future<void> _addAction(SessionSummaryModel summary) async {
     final text = await _showEditTextDialog('', label: 'Action');
@@ -532,8 +714,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     }
   }
 
-  // ── Follow-Ups ──────────────────────────────────────────────────────
-
   Future<void> _addFollowUp(SessionSummaryModel summary) async {
     final followUp = await _showEditFollowUpDialog(null);
     if (followUp == null) return;
@@ -543,7 +723,10 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     });
   }
 
-  Future<void> _editFollowUp(SessionSummaryModel summary, int index) async {
+  Future<void> _editFollowUp(
+    SessionSummaryModel summary,
+    int index,
+  ) async {
     final followUp =
         await _showEditFollowUpDialog(summary.followUps[index]);
     if (followUp == null) return;
@@ -555,7 +738,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   }
 
   Future<void> _deleteFollowUp(
-      SessionSummaryModel summary, int index) async {
+    SessionSummaryModel summary,
+    int index,
+  ) async {
     final confirmed = await _showDeleteConfirmation();
     if (!confirmed) {
       ref.invalidate(summaryProvider(widget.sessionId));
@@ -567,22 +752,21 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     });
   }
 
-  // ── Share ────────────────────────────────────────────────────────────
-
   void _showShareOptions(
     SessionSummaryModel summary,
     String activityTitle,
     int? durationSeconds,
   ) {
+    final colors = context.colors;
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.card,
+      backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (context) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(AppDimensions.paddingM),
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -590,27 +774,25 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.textTertiary.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
+                  color: colors.divider,
+                  borderRadius: BorderRadius.circular(999),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text(
+              const SizedBox(height: 20),
+              Text(
                 'Share Summary',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: colors.textPrimary,
                 ),
               ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(
-                  Icons.picture_as_pdf,
-                  color: AppColors.error,
-                ),
-                title: const Text('Share as PDF'),
-                subtitle: const Text('Formatted document'),
+              const SizedBox(height: 20),
+              _ShareOption(
+                icon: Icons.picture_as_pdf,
+                iconColor: colors.error,
+                title: 'Share as PDF',
+                subtitle: 'Formatted document',
                 onTap: () {
                   Navigator.pop(context);
                   _shareAs(
@@ -621,13 +803,12 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   );
                 },
               ),
-              ListTile(
-                leading: const Icon(
-                  Icons.description_outlined,
-                  color: AppColors.primary,
-                ),
-                title: const Text('Share as Markdown'),
-                subtitle: const Text('Plain text format'),
+              const SizedBox(height: 8),
+              _ShareOption(
+                icon: Icons.description_outlined,
+                iconColor: colors.primary,
+                title: 'Share as Markdown',
+                subtitle: 'Plain text format',
                 onTap: () {
                   Navigator.pop(context);
                   _shareAs(
@@ -638,7 +819,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   );
                 },
               ),
-              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -674,23 +854,16 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     }
   }
 
-  // ── Confirm & Close ─────────────────────────────────────────────────
-
   Future<void> _confirmAndClose() async {
     setState(() => _isConfirming = true);
-
     final summaryRepo = ref.read(summaryRepositoryProvider);
     final result = await summaryRepo.confirmSummary(widget.sessionId);
     if (!mounted) return;
-
     result.when(
-      success: (_) {
-        _goBackToDashboard();
-      },
+      success: (_) => _goBackToDashboard(),
       failure: (message, _) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
         setState(() => _isConfirming = false);
       },
     );
@@ -699,47 +872,14 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   String _formatDuration(int seconds) {
     final minutes = seconds ~/ 60;
     final secs = seconds % 60;
-    if (minutes > 0) {
-      return '${minutes}m ${secs}s';
-    }
+    if (minutes > 0) return '${minutes}m ${secs}s';
     return '${secs}s';
   }
 }
 
-// ── Private Widgets ──────────────────────────────────────────────────────
-
-class _EmptySummaryState extends StatelessWidget {
-  final String message;
-
-  const _EmptySummaryState({required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppDimensions.paddingS),
-      child: Text(
-        message,
-        style: Theme.of(
-          context,
-        ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
-      ),
-    );
-  }
-}
-
-class _ActionSummaryData {
-  final String label;
-  final String status;
-  final String? externalUrl;
-  final String? externalLabel;
-
-  const _ActionSummaryData({
-    required this.label,
-    required this.status,
-    this.externalUrl,
-    this.externalLabel,
-  });
-}
+// ═══════════════════════════════════════════════════════════════
+// ── Section Header (circular icon container) ─────────────────
+// ═══════════════════════════════════════════════════════════════
 
 class _SectionHeader extends StatelessWidget {
   final IconData icon;
@@ -758,32 +898,120 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(width: 8),
+        // Circular icon container
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withValues(alpha: 0.15),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Icon(icon, color: color, size: 16),
+        ),
+        const SizedBox(width: 12),
         Text(
           title,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const Spacer(),
         if (onAdd != null)
-          IconButton(
-            icon: Icon(Icons.add_circle_outline, color: color, size: 22),
-            onPressed: onAdd,
-            tooltip: 'Add',
-            visualDensity: VisualDensity.compact,
+          GestureDetector(
+            onTap: onAdd,
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: color.withValues(alpha: 0.12),
+                border: Border.all(color: color.withValues(alpha: 0.25)),
+              ),
+              child: Icon(Icons.add, color: color, size: 18),
+            ),
           ),
       ],
     );
   }
 }
 
-class _SummaryItem extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════
+// ── Summary Card (overview text, no number) ──────────────────
+// ═══════════════════════════════════════════════════════════════
+
+class _SummaryCard extends StatelessWidget {
+  final String text;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _SummaryCard({
+    required this.text,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: c.textPrimary,
+                  height: 1.5,
+                ),
+              ),
+            ),
+            if (onTap != null) ...[
+              const SizedBox(width: 12),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: c.textTertiary.withValues(alpha: 0.08),
+                ),
+                child: Icon(
+                  Icons.edit_outlined,
+                  size: 14,
+                  color: c.textTertiary.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ── Numbered Summary Item (with circular number) ─────────────
+// ═══════════════════════════════════════════════════════════════
+
+class _NumberedSummaryItem extends StatelessWidget {
+  final int number;
   final String text;
   final Color color;
   final VoidCallback? onTap;
   final VoidCallback? onDismissed;
 
-  const _SummaryItem({
+  const _NumberedSummaryItem({
+    required this.number,
     required this.text,
     required this.color,
     this.onTap,
@@ -792,35 +1020,70 @@ class _SummaryItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     Widget item = Padding(
-      padding: const EdgeInsets.only(bottom: AppDimensions.paddingS),
+      padding: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        borderRadius: BorderRadius.circular(22),
         child: Container(
-          padding: const EdgeInsets.all(AppDimensions.paddingM),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-            border: Border(left: BorderSide(color: color, width: 3)),
+            color: c.card,
+            borderRadius: BorderRadius.circular(22),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  text,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: AppColors.textPrimary),
+              // Numbered circle
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withValues(alpha: 0.15),
+                  border: Border.all(
+                    color: color.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$number',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
                 ),
               ),
-              if (onTap != null)
-                Icon(
-                  Icons.edit_outlined,
-                  size: 16,
-                  color: AppColors.textTertiary.withValues(alpha: 0.5),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    text,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.copyWith(
+                          color: c.textPrimary,
+                          height: 1.4,
+                        ),
+                  ),
                 ),
+              ),
+              if (onTap != null) ...[
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Icon(
+                    Icons.edit_outlined,
+                    size: 14,
+                    color: c.textTertiary.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -833,13 +1096,13 @@ class _SummaryItem extends StatelessWidget {
         direction: DismissDirection.endToStart,
         background: Container(
           alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: AppDimensions.paddingL),
-          margin: const EdgeInsets.only(bottom: AppDimensions.paddingS),
+          padding: const EdgeInsets.only(right: 24),
+          margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
-            color: AppColors.error.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+            color: c.error.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(22),
           ),
-          child: const Icon(Icons.delete_outline, color: AppColors.error),
+          child: Icon(Icons.delete_outline, color: c.error),
         ),
         confirmDismiss: (_) async => true,
         onDismissed: (_) => onDismissed!(),
@@ -851,24 +1114,45 @@ class _SummaryItem extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ── Action Summary Item (with status dot) ────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+class _ActionSummaryData {
+  final String label;
+  final String status;
+  final String? externalUrl;
+  final String? externalLabel;
+
+  const _ActionSummaryData({
+    required this.label,
+    required this.status,
+    this.externalUrl,
+    this.externalLabel,
+  });
+}
+
 class _ActionSummaryItem extends StatelessWidget {
   final _ActionSummaryData action;
+  final int index;
   final VoidCallback? onTap;
   final VoidCallback? onDismissed;
 
   const _ActionSummaryItem({
     required this.action,
+    required this.index,
     this.onTap,
     this.onDismissed,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final statusColor = switch (action.status) {
-      'in_progress' => AppColors.warning,
-      'pending' => AppColors.warning,
-      'failed' => AppColors.error,
-      _ => AppColors.success,
+      'in_progress' => c.warning,
+      'pending' => c.warning,
+      'failed' => c.error,
+      _ => c.success,
     };
     final statusLabel = switch (action.status) {
       'in_progress' => 'In progress',
@@ -878,61 +1162,95 @@ class _ActionSummaryItem extends StatelessWidget {
     };
 
     Widget item = Padding(
-      padding: const EdgeInsets.only(bottom: AppDimensions.paddingS),
+      padding: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        borderRadius: BorderRadius.circular(22),
         child: Container(
-          padding: const EdgeInsets.all(AppDimensions.paddingM),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-            border: const Border(
-              left: BorderSide(color: AppColors.action, width: 3),
-            ),
+            color: c.card,
+            borderRadius: BorderRadius.circular(22),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Numbered circle in action color
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: c.action.withValues(alpha: 0.15),
+                  border: Border.all(
+                    color: c.action.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$index',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: c.action,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      action.label,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textPrimary,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        action.label,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: c.textPrimary),
                       ),
                     ),
                     if (action.externalLabel != null ||
                         action.externalUrl != null) ...[
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
                         action.externalLabel ?? action.externalUrl ?? '',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: AppColors.info),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: c.info),
                       ),
                     ],
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.15),
-                  borderRadius:
-                      BorderRadius.circular(AppDimensions.radiusFull),
-                ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: statusColor,
-                  ),
+              const SizedBox(width: 8),
+              // Status pill
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: statusColor,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      statusLabel,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: statusColor,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -947,13 +1265,13 @@ class _ActionSummaryItem extends StatelessWidget {
         direction: DismissDirection.endToStart,
         background: Container(
           alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: AppDimensions.paddingL),
-          margin: const EdgeInsets.only(bottom: AppDimensions.paddingS),
+          padding: const EdgeInsets.only(right: 24),
+          margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
-            color: AppColors.error.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+            color: c.error.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(22),
           ),
-          child: const Icon(Icons.delete_outline, color: AppColors.error),
+          child: Icon(Icons.delete_outline, color: c.error),
         ),
         confirmDismiss: (_) async => true,
         onDismissed: (_) => onDismissed!(),
@@ -965,73 +1283,137 @@ class _ActionSummaryItem extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ── Follow-Up Item (with priority circle) ────────────────────
+// ═══════════════════════════════════════════════════════════════
+
 class _FollowUpItem extends StatelessWidget {
   final FollowUpModel followUp;
+  final int index;
   final VoidCallback? onTap;
   final VoidCallback? onDismissed;
 
   const _FollowUpItem({
     required this.followUp,
+    required this.index,
     this.onTap,
     this.onDismissed,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
+    Color priorityColor(String priority) => switch (priority) {
+      'high' => c.error,
+      'medium' => c.warning,
+      _ => c.info,
+    };
+
+    final pColor = priorityColor(followUp.priority);
+
     Widget item = Padding(
-      padding: const EdgeInsets.only(bottom: AppDimensions.paddingS),
+      padding: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+        borderRadius: BorderRadius.circular(22),
         child: Container(
-          padding: const EdgeInsets.all(AppDimensions.paddingM),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(AppDimensions.radiusM),
-            border: const Border(
-              left: BorderSide(color: AppColors.warning, width: 3),
-            ),
+            color: c.card,
+            borderRadius: BorderRadius.circular(22),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Numbered circle in warning color
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: c.warning.withValues(alpha: 0.15),
+                  border: Border.all(
+                    color: c.warning.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$index',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: c.warning,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      followUp.description,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textPrimary,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        followUp.description,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: c.textPrimary),
                       ),
                     ),
-                    if (followUp.dueDate != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          'Due: ${DateFormat.yMMMd().format(followUp.dueDate!)}',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                    if (followUp.dueDate != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.calendar_today,
+                            size: 12,
+                            color:
+                                c.textTertiary.withValues(alpha: 0.6),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            DateFormat.yMMMd().format(followUp.dueDate!),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: c.textTertiary,
+                                ),
+                          ),
+                        ],
                       ),
+                    ],
                   ],
                 ),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _priorityColor(
-                    followUp.priority,
-                  ).withValues(alpha: 0.15),
-                  borderRadius:
-                      BorderRadius.circular(AppDimensions.radiusFull),
-                ),
-                child: Text(
-                  followUp.priority,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: _priorityColor(followUp.priority),
-                  ),
+              const SizedBox(width: 8),
+              // Priority dot + label
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: pColor,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      followUp.priority,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: pColor,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1046,13 +1428,13 @@ class _FollowUpItem extends StatelessWidget {
         direction: DismissDirection.endToStart,
         background: Container(
           alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: AppDimensions.paddingL),
-          margin: const EdgeInsets.only(bottom: AppDimensions.paddingS),
+          padding: const EdgeInsets.only(right: 24),
+          margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
-            color: AppColors.error.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(AppDimensions.radiusM),
+            color: c.error.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(22),
           ),
-          child: const Icon(Icons.delete_outline, color: AppColors.error),
+          child: Icon(Icons.delete_outline, color: c.error),
         ),
         confirmDismiss: (_) async => true,
         onDismissed: (_) => onDismissed!(),
@@ -1062,10 +1444,107 @@ class _FollowUpItem extends StatelessWidget {
 
     return item;
   }
+}
 
-  Color _priorityColor(String priority) => switch (priority) {
-    'high' => AppColors.error,
-    'medium' => AppColors.warning,
-    _ => AppColors.info,
-  };
+// ═══════════════════════════════════════════════════════════════
+// ── Empty State ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+class _EmptySummaryState extends StatelessWidget {
+  final String message;
+
+  const _EmptySummaryState({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8, left: 4),
+      child: Text(
+        message,
+        style: Theme.of(context)
+            .textTheme
+            .bodyMedium
+            ?.copyWith(color: c.textSecondary),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ── Share Option Tile ────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+
+class _ShareOption extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _ShareOption({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: c.card,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: iconColor.withValues(alpha: 0.15),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 14,
+                color: c.textTertiary.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
