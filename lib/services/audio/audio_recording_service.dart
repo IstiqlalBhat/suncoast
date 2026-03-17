@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:logger/logger.dart';
 import 'package:record/record.dart';
 
@@ -6,7 +9,6 @@ class AudioRecordingService {
   final AudioRecorder _recorder = AudioRecorder();
   final _logger = Logger();
   final _amplitudeController = StreamController<double>.broadcast();
-  Timer? _amplitudeTimer;
   bool _isRecording = false;
 
   Stream<double> get amplitudeStream => _amplitudeController.stream;
@@ -32,7 +34,6 @@ class AudioRecordingService {
       );
 
       _isRecording = true;
-      _startAmplitudeMonitor();
       _logger.i('Audio recording started');
     } catch (e) {
       _logger.e('Failed to start recording: $e');
@@ -40,42 +41,87 @@ class AudioRecordingService {
     }
   }
 
-  Stream<List<int>> startStream({int sampleRate = 16000}) async* {
+  Stream<List<int>> startStream({
+    int sampleRate = 16000,
+    bool enableVoiceProcessing = false,
+    bool preferSpeakerOutput = false,
+  }) async* {
     try {
       if (!await hasPermission()) {
         throw Exception('Microphone permission not granted');
       }
 
+      await _recorder.ios?.manageAudioSession(!enableVoiceProcessing);
+
       final stream = await _recorder.startStream(
-        RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
+        _buildStreamConfig(
           sampleRate: sampleRate,
-          numChannels: 1,
+          enableVoiceProcessing: enableVoiceProcessing,
+          preferSpeakerOutput: preferSpeakerOutput,
         ),
       );
 
       _isRecording = true;
-      _startAmplitudeMonitor();
       _logger.i('Audio stream started');
 
       try {
         await for (final chunk in stream) {
+          // Compute amplitude from PCM16 data
+          _computeAmplitude(chunk);
           yield chunk;
         }
       } finally {
         _isRecording = false;
-        _amplitudeTimer?.cancel();
       }
     } catch (e) {
       _isRecording = false;
-      _amplitudeTimer?.cancel();
       _logger.e('Failed to start stream: $e');
       rethrow;
     }
   }
 
+  RecordConfig _buildStreamConfig({
+    required int sampleRate,
+    required bool enableVoiceProcessing,
+    required bool preferSpeakerOutput,
+  }) {
+    return RecordConfig(
+      encoder: AudioEncoder.pcm16bits,
+      sampleRate: sampleRate,
+      numChannels: 1,
+      autoGain: enableVoiceProcessing,
+      echoCancel: enableVoiceProcessing,
+      noiseSuppress: enableVoiceProcessing,
+      streamBufferSize: enableVoiceProcessing ? 2048 : null,
+      androidConfig: enableVoiceProcessing
+          ? AndroidRecordConfig(
+              audioSource: AndroidAudioSource.voiceCommunication,
+              audioManagerMode: AudioManagerMode.modeInCommunication,
+              speakerphone: preferSpeakerOutput,
+            )
+          : const AndroidRecordConfig(),
+    );
+  }
+
+  /// Compute RMS amplitude from PCM16 little-endian audio data.
+  void _computeAmplitude(List<int> chunk) {
+    if (chunk.length < 2) return;
+
+    final bytes = Uint8List.fromList(chunk);
+    final samples = bytes.buffer.asInt16List();
+    if (samples.isEmpty) return;
+
+    double sum = 0;
+    for (final sample in samples) {
+      final normalized = sample / 32768.0;
+      sum += normalized * normalized;
+    }
+    final rms = math.sqrt(sum / samples.length);
+    final level = (rms * 5.0).clamp(0.0, 1.0);
+    _amplitudeController.add(level);
+  }
+
   Future<String?> stop() async {
-    _amplitudeTimer?.cancel();
     _isRecording = false;
 
     try {
@@ -88,22 +134,7 @@ class AudioRecordingService {
     }
   }
 
-  void _startAmplitudeMonitor() {
-    _amplitudeTimer = Timer.periodic(
-      const Duration(milliseconds: 100),
-      (_) async {
-        try {
-          final amplitude = await _recorder.getAmplitude();
-          // Normalize dBFS to 0-1 range (-160 to 0 dBFS)
-          final normalized = ((amplitude.current + 60) / 60).clamp(0.0, 1.0);
-          _amplitudeController.add(normalized);
-        } catch (_) {}
-      },
-    );
-  }
-
   Future<void> dispose() async {
-    _amplitudeTimer?.cancel();
     await _amplitudeController.close();
     await _recorder.dispose();
   }

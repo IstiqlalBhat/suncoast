@@ -194,6 +194,7 @@ class SettingsScreen extends ConsumerWidget {
                     _SettingsTile(
                       icon: Icons.volume_up,
                       title: 'Voice Output',
+                      subtitle: 'AI speaks responses aloud in chat mode',
                       trailing: Switch(
                         value: settings.voiceOutputEnabled,
                         onChanged: (v) => ref
@@ -207,46 +208,36 @@ class SettingsScreen extends ConsumerWidget {
                       color: c.divider,
                     ),
                     _SettingsTile(
-                      icon: Icons.phone_iphone,
-                      title: 'On-Device (Apple)',
-                      subtitle: 'Built-in system voice',
-                      trailing: Radio<bool>(
-                        value: false,
-                        groupValue: settings.usePremiumTts,
-                        onChanged: settings.voiceOutputEnabled
-                            ? (v) {
-                                if (v != null) {
-                                  ref
-                                      .read(settingsProvider.notifier)
-                                      .updatePremiumTts(v);
-                                }
-                              }
-                            : null,
+                      icon: Icons.record_voice_over,
+                      title: 'Premium Voice',
+                      subtitle: 'ElevenLabs real-time voice in chat mode',
+                      trailing: Switch(
+                        value: settings.elevenlabsEnabled,
+                        onChanged: (v) => ref
+                            .read(settingsProvider.notifier)
+                            .updateElevenlabs(v),
                       ),
                     ),
-                    Divider(
-                      height: 1,
-                      indent: 56,
-                      color: c.divider,
-                    ),
-                    _SettingsTile(
-                      icon: Icons.cloud_outlined,
-                      title: 'Cloud (OpenAI)',
-                      subtitle: 'Higher quality AI voice',
-                      trailing: Radio<bool>(
-                        value: true,
-                        groupValue: settings.usePremiumTts,
-                        onChanged: settings.voiceOutputEnabled
-                            ? (v) {
-                                if (v != null) {
-                                  ref
-                                      .read(settingsProvider.notifier)
-                                      .updatePremiumTts(v);
-                                }
-                              }
-                            : null,
+                    if (!settings.elevenlabsEnabled) ...[
+                      Divider(
+                        height: 1,
+                        indent: 56,
+                        color: c.divider,
                       ),
-                    ),
+                      _SettingsTile(
+                        icon: Icons.auto_awesome,
+                        title: 'Premium Voice (OpenAI)',
+                        subtitle: 'Higher quality AI voice for push-to-talk',
+                        trailing: Switch(
+                          value: settings.usePremiumTts,
+                          onChanged: settings.voiceOutputEnabled
+                              ? (v) => ref
+                                    .read(settingsProvider.notifier)
+                                    .updatePremiumTts(v)
+                              : null,
+                        ),
+                      ),
+                    ],
                     Divider(
                       height: 1,
                       indent: 56,

@@ -15,6 +15,7 @@ import '../../../../shared/providers/app_providers.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../services/audio/audio_playback_service.dart';
 import '../../../../services/audio/audio_recording_service.dart';
+import '../../../../services/audio/voice_activity_gate.dart';
 import '../../../../services/speech/apple_stt_service.dart';
 import '../../../../services/conversation/elevenlabs_conversation_service.dart';
 import '../../../../services/media/camera_service.dart';
@@ -272,8 +273,11 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   StreamSubscription<ConversationStatus>? _convStatusSub;
   StreamSubscription<String>? _convUserTranscriptSub;
   StreamSubscription<String>? _convAgentResponseSub;
+  StreamSubscription<AgentResponseCorrection>? _convAgentCorrectionSub;
   StreamSubscription<bool>? _convAgentSpeakingSub;
+  StreamSubscription<double>? _convPlaybackLevelSub;
   StreamSubscription<String>? _convErrorSub;
+  final VoiceActivityGate _conversationBargeInGate = VoiceActivityGate();
 
   // OpenAI Realtime Voice (media mode)
   OpenAiRealtimeVoiceService? _voiceService;
@@ -416,7 +420,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   void _ensureAmplitudeSubscription() {
-    _amplitudeSub ??= _audioService.amplitudeStream.listen((level) {
+    _amplitudeSub?.cancel();
+    _amplitudeSub = _audioService.amplitudeStream.listen((level) {
       if (!state.isMuted) {
         state = state.copyWith(audioLevel: level);
       }
@@ -438,9 +443,18 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   /// Start ElevenLabs real-time voice conversation for chat mode.
-  /// Falls back to push-to-talk if connection fails.
+  /// Falls back to push-to-talk if premium voice is disabled or connection fails.
   Future<void> _startConversation() async {
     if (state.session == null) return;
+
+    final settings = _readSettings();
+    if (settings?.elevenlabsEnabled == false) {
+      _logger.i('ElevenLabs disabled, using push-to-talk mode');
+      _setStateIfMounted(
+        (current) => current.copyWith(isConversationActive: false),
+      );
+      return;
+    }
 
     try {
       _conversationService = ElevenLabsConversationService(
@@ -452,8 +466,12 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         if (!mounted) return;
         if (status == ConversationStatus.error ||
             status == ConversationStatus.disconnected) {
+          _conversationBargeInGate.reset();
           _setStateIfMounted(
-            (current) => current.copyWith(isConversationActive: false),
+            (current) => current.copyWith(
+              isConversationActive: false,
+              conversationState: SessionConversationState.idle,
+            ),
           );
         }
       });
@@ -480,6 +498,10 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         _repository.updateTranscript(state.session!.id, updated);
       });
 
+      _convAgentCorrectionSub = _conversationService!
+          .agentResponseCorrectionStream
+          .listen(_handleConversationAgentCorrection);
+
       _convAgentSpeakingSub = _conversationService!.agentSpeakingStream.listen((
         speaking,
       ) {
@@ -488,10 +510,16 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
           (current) => current.copyWith(
             conversationState: speaking
                 ? SessionConversationState.aiSpeaking
-                : SessionConversationState.idle,
+                : (_conversationBargeInGate.isGateOpen
+                      ? SessionConversationState.userSpeaking
+                      : SessionConversationState.idle),
           ),
         );
       });
+
+      _convPlaybackLevelSub = _conversationService!.playbackLevelStream.listen(
+        _conversationBargeInGate.updatePlaybackLevel,
+      );
 
       _convErrorSub = _conversationService!.errorStream.listen((error) {
         if (!mounted) return;
@@ -512,13 +540,11 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       }
 
       _ensureAmplitudeSubscription();
-      final stream = _audioService.startStream();
-      _interactiveAudioSub = stream.listen((chunk) {
-        if (!state.isMuted &&
-            state.conversationState != SessionConversationState.aiSpeaking) {
-          _conversationService?.sendAudioChunk(chunk);
-        }
-      });
+      final stream = _audioService.startStream(
+        enableVoiceProcessing: true,
+        preferSpeakerOutput: true,
+      );
+      _interactiveAudioSub = stream.listen(_handleConversationAudioChunk);
 
       _setStateIfMounted(
         (current) => current.copyWith(isConversationActive: true),
@@ -540,6 +566,67 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     }
   }
 
+  void _handleConversationAudioChunk(List<int> chunk) {
+    final conversationService = _conversationService;
+    if (conversationService == null) {
+      return;
+    }
+
+    if (state.isMuted) {
+      _conversationBargeInGate.reset();
+      return;
+    }
+
+    final decision = _conversationBargeInGate.process(
+      chunk,
+      aiSpeaking: conversationService.isAgentSpeaking,
+    );
+
+    if (decision.shouldInterruptPlayback) {
+      conversationService.sendUserActivity();
+      conversationService.interruptPlayback();
+      _logger.i(
+        'Local barge-in triggered '
+        '(mic=${decision.micLevel.toStringAsFixed(3)})',
+      );
+      _setStateIfMounted(
+        (current) => current.copyWith(
+          conversationState: SessionConversationState.userSpeaking,
+        ),
+      );
+    } else if (decision.userSpeechEnded &&
+        !conversationService.isAgentSpeaking &&
+        state.conversationState == SessionConversationState.userSpeaking) {
+      _setStateIfMounted(
+        (current) =>
+            current.copyWith(conversationState: SessionConversationState.idle),
+      );
+    }
+
+    for (final audioChunk in decision.chunksToSend) {
+      conversationService.sendAudioChunk(audioChunk);
+    }
+  }
+
+  void _handleConversationAgentCorrection(AgentResponseCorrection correction) {
+    if (!mounted || state.session == null) return;
+
+    final correctedResponse = correction.correctedAgentResponse.trim();
+    final updatedTranscript = _replaceLastTranscriptLine(
+      speakerPrefix: 'AI:',
+      replacementText: correctedResponse,
+      originalText: correction.originalAgentResponse,
+    );
+
+    _setStateIfMounted(
+      (current) => current.copyWith(
+        transcript: updatedTranscript,
+        aiResponse: correctedResponse.isEmpty ? null : correctedResponse,
+      ),
+    );
+    _repository.updateTranscript(state.session!.id, updatedTranscript);
+  }
+
   Future<void> _startAudioPipeline() async {
     final settings = _readSettings();
     if (settings?.sttEngine == SttEngine.device) {
@@ -551,12 +638,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
   Future<void> _startOnDeviceSttPipeline() async {
     try {
-      final initialized = await _appleSttService.initialize();
-      if (!initialized) {
-        state = state.copyWith(
-          error: 'On-device speech recognition unavailable. '
-              'Check Settings > General > Keyboard > Dictation for language models.',
-        );
+      final initError = await _appleSttService.initialize();
+      if (initError != null) {
+        state = state.copyWith(error: initError);
         return;
       }
 
@@ -577,13 +661,13 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       );
 
       // Subscribe to sound level stream for waveform
-      _onDeviceSoundLevelSub = _appleSttService.soundLevelStream.listen(
-        (level) {
-          if (!state.isMuted) {
-            state = state.copyWith(audioLevel: level);
-          }
-        },
-      );
+      _onDeviceSoundLevelSub = _appleSttService.soundLevelStream.listen((
+        level,
+      ) {
+        if (!state.isMuted) {
+          state = state.copyWith(audioLevel: level);
+        }
+      });
 
       // Map language code to locale (e.g. 'en' -> 'en-US')
       final settings = _readSettings();
@@ -594,7 +678,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
       _logger.i('On-device STT pipeline started (locale=$locale)');
     } catch (e) {
       _logger.e('Failed to start on-device STT pipeline: $e');
-      state = state.copyWith(error: 'Failed to start on-device speech recognition: $e');
+      state = state.copyWith(
+        error: 'Failed to start on-device speech recognition: $e',
+      );
     }
   }
 
@@ -1855,6 +1941,64 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     ].join('\n');
   }
 
+  String _replaceLastTranscriptLine({
+    required String speakerPrefix,
+    required String replacementText,
+    String? originalText,
+    String? transcriptOverride,
+  }) {
+    final currentTranscript = (transcriptOverride ?? state.transcript).trim();
+    if (currentTranscript.isEmpty) {
+      return replacementText.trim().isEmpty
+          ? ''
+          : '$speakerPrefix ${replacementText.trim()}'.trim();
+    }
+
+    final replacement = replacementText.trim();
+    final original = originalText?.trim();
+    final lines = currentTranscript
+        .split('\n')
+        .where((line) => line.trim().isNotEmpty)
+        .toList();
+
+    int? fallbackIndex;
+    for (var i = lines.length - 1; i >= 0; i -= 1) {
+      final line = lines[i].trim();
+      if (!line.startsWith(speakerPrefix)) {
+        continue;
+      }
+
+      fallbackIndex ??= i;
+      final normalizedLine = line.substring(speakerPrefix.length).trim();
+      if (original == null ||
+          normalizedLine == original ||
+          normalizedLine.startsWith(original)) {
+        if (replacement.isEmpty) {
+          lines.removeAt(i);
+        } else {
+          lines[i] = '$speakerPrefix $replacement'.trim();
+        }
+        return lines.join('\n');
+      }
+    }
+
+    if (fallbackIndex != null) {
+      if (replacement.isEmpty) {
+        lines.removeAt(fallbackIndex);
+      } else {
+        lines[fallbackIndex] = '$speakerPrefix $replacement'.trim();
+      }
+      return lines.join('\n');
+    }
+
+    return replacement.isEmpty
+        ? currentTranscript
+        : _appendTranscriptLine(
+            '$speakerPrefix $replacement'.trim(),
+            transcriptOverride: currentTranscript,
+          );
+  }
+
   String _buildSessionContext({String? transcriptOverride}) {
     final contextSections = <String>[state.activityContext];
     final transcript = (transcriptOverride ?? state.transcript).trim();
@@ -2162,6 +2306,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     if (!wasMuted) {
       // Now muted
       state = state.copyWith(audioLevel: 0.0);
+      _conversationBargeInGate.reset();
       if (_isOnDeviceSttActive) {
         _appleSttService.stopListening();
       }
@@ -2217,13 +2362,18 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     await _convStatusSub?.cancel();
     await _convUserTranscriptSub?.cancel();
     await _convAgentResponseSub?.cancel();
+    await _convAgentCorrectionSub?.cancel();
     await _convAgentSpeakingSub?.cancel();
+    await _convPlaybackLevelSub?.cancel();
     await _convErrorSub?.cancel();
     _convStatusSub = null;
     _convUserTranscriptSub = null;
     _convAgentResponseSub = null;
+    _convAgentCorrectionSub = null;
     _convAgentSpeakingSub = null;
+    _convPlaybackLevelSub = null;
     _convErrorSub = null;
+    _conversationBargeInGate.reset(resetNoiseFloor: true);
     await _conversationService?.stop();
     _conversationService = null;
   }

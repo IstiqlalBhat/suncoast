@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:audio_session/audio_session.dart';
@@ -14,6 +15,16 @@ import '../../core/config/app_config.dart';
 import '../../core/network/api_client.dart';
 
 enum ConversationStatus { disconnected, connecting, connected, error }
+
+class AgentResponseCorrection {
+  final String correctedAgentResponse;
+  final String? originalAgentResponse;
+
+  const AgentResponseCorrection({
+    required this.correctedAgentResponse,
+    this.originalAgentResponse,
+  });
+}
 
 class ElevenLabsConversationService {
   final ApiClient _apiClient;
@@ -44,20 +55,27 @@ class ElevenLabsConversationService {
   final _statusController = StreamController<ConversationStatus>.broadcast();
   final _userTranscriptController = StreamController<String>.broadcast();
   final _agentResponseController = StreamController<String>.broadcast();
+  final _agentResponseCorrectionController =
+      StreamController<AgentResponseCorrection>.broadcast();
   final _agentSpeakingController = StreamController<bool>.broadcast();
+  final _playbackLevelController = StreamController<double>.broadcast();
   final _errorController = StreamController<String>.broadcast();
 
   // Public streams
   Stream<ConversationStatus> get statusStream => _statusController.stream;
   Stream<String> get userTranscriptStream => _userTranscriptController.stream;
   Stream<String> get agentResponseStream => _agentResponseController.stream;
+  Stream<AgentResponseCorrection> get agentResponseCorrectionStream =>
+      _agentResponseCorrectionController.stream;
   Stream<bool> get agentSpeakingStream => _agentSpeakingController.stream;
+  Stream<double> get playbackLevelStream => _playbackLevelController.stream;
   Stream<String> get errorStream => _errorController.stream;
   ConversationStatus get status => _status;
   bool get isConnected => _status == ConversationStatus.connected;
+  bool get isAgentSpeaking => _agentSpeaking;
 
   ElevenLabsConversationService({required ApiClient apiClient})
-      : _apiClient = apiClient;
+    : _apiClient = apiClient;
 
   Future<http.Response> _requestSignedUrl({bool forceRefresh = false}) async {
     final token = await _apiClient.getValidAccessToken(
@@ -65,9 +83,7 @@ class ElevenLabsConversationService {
     );
     return http.get(
       Uri.parse('${AppConfig.firebaseFunctionsUrl}/getSignedConversationUrl'),
-      headers: {
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
+      headers: {if (token != null) 'Authorization': 'Bearer $token'},
     );
   }
 
@@ -81,13 +97,15 @@ class ElevenLabsConversationService {
     try {
       // Configure audio session for simultaneous recording + playback (iOS)
       final session = await AudioSession.instance;
-      await session.configure(AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.defaultToSpeaker |
-            AVAudioSessionCategoryOptions.allowBluetooth,
-        avAudioSessionMode: AVAudioSessionMode.voiceChat,
-      ));
+      await session.configure(
+        AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+          avAudioSessionCategoryOptions:
+              AVAudioSessionCategoryOptions.defaultToSpeaker |
+              AVAudioSessionCategoryOptions.allowBluetooth,
+          avAudioSessionMode: AVAudioSessionMode.voiceChat,
+        ),
+      );
       _logger.i('Audio session configured for playAndRecord');
 
       // Set up player completion listener for detecting end of speech
@@ -127,21 +145,21 @@ class ElevenLabsConversationService {
       );
 
       // Now send initial client data with session context and audio format
-      _channel!.sink.add(jsonEncode({
-        'type': 'conversation_initiation_client_data',
-        'conversation_config_override': {
-          'agent': {
-            'prompt': {},
-            'first_message': null,
-            'language': 'en',
+      _channel!.sink.add(
+        jsonEncode({
+          'type': 'conversation_initiation_client_data',
+          'conversation_config_override': {
+            'agent': {'prompt': {}, 'first_message': null, 'language': 'en'},
           },
-        },
-        'dynamic_variables': {
-          'session_id': sessionId,
-          'activity_context': activityContext,
-        },
-      }));
-      _logger.i('Sent conversation_initiation_client_data with session=$sessionId');
+          'dynamic_variables': {
+            'session_id': sessionId,
+            'activity_context': activityContext,
+          },
+        }),
+      );
+      _logger.i(
+        'Sent conversation_initiation_client_data with session=$sessionId',
+      );
 
       _updateStatus(ConversationStatus.connected);
       _logger.i('ElevenLabs conversation connected');
@@ -165,6 +183,20 @@ class ElevenLabsConversationService {
     }
   }
 
+  void sendUserActivity() {
+    if (_channel == null || _status != ConversationStatus.connected) return;
+
+    try {
+      _channel!.sink.add(jsonEncode({'type': 'user_activity'}));
+    } catch (e) {
+      _logger.e('Failed to send user_activity: $e');
+    }
+  }
+
+  void interruptPlayback() {
+    _handleInterruption();
+  }
+
   void _onMessage(dynamic rawMessage) {
     try {
       final data = jsonDecode(rawMessage as String) as Map<String, dynamic>;
@@ -173,11 +205,11 @@ class ElevenLabsConversationService {
 
       switch (type) {
         case 'conversation_initiation_metadata':
-          final metadata = data['conversation_initiation_metadata_event']
-              as Map<String, dynamic>?;
+          final metadata =
+              data['conversation_initiation_metadata_event']
+                  as Map<String, dynamic>?;
           _conversationId = metadata?['conversation_id'] as String?;
-          final audioFormat =
-              metadata?['agent_output_audio_format'] as String?;
+          final audioFormat = metadata?['agent_output_audio_format'] as String?;
           if (audioFormat != null) {
             _outputSampleRate = _parseSampleRate(audioFormat);
           }
@@ -196,23 +228,35 @@ class ElevenLabsConversationService {
         case 'user_transcript':
           final event =
               data['user_transcription_event'] as Map<String, dynamic>?;
-          final transcript =
-              (event?['user_transcript'] as String? ?? '').trim();
+          final transcript = (event?['user_transcript'] as String? ?? '')
+              .trim();
           if (transcript.isNotEmpty) {
             _userTranscriptController.add(transcript);
           }
 
         case 'agent_response':
-          final event =
-              data['agent_response_event'] as Map<String, dynamic>?;
-          final response =
-              (event?['agent_response'] as String? ?? '').trim();
+          final event = data['agent_response_event'] as Map<String, dynamic>?;
+          final response = (event?['agent_response'] as String? ?? '').trim();
           if (response.isNotEmpty) {
             _agentResponseController.add(response);
           }
           // Flush any remaining buffered audio
           _audioFlushTimer?.cancel();
           _flushAudioToQueue();
+
+        case 'agent_response_correction':
+          final event =
+              data['agent_response_correction_event'] as Map<String, dynamic>?;
+          final corrected =
+              (event?['corrected_agent_response'] as String? ?? '').trim();
+          final original = (event?['original_agent_response'] as String? ?? '')
+              .trim();
+          _agentResponseCorrectionController.add(
+            AgentResponseCorrection(
+              correctedAgentResponse: corrected,
+              originalAgentResponse: original.isEmpty ? null : original,
+            ),
+          );
 
         case 'ping':
           final eventId =
@@ -226,6 +270,13 @@ class ElevenLabsConversationService {
         case 'interruption':
           _handleInterruption();
 
+        case 'vad_score':
+          final event = data['vad_score_event'] as Map<String, dynamic>?;
+          final score = event?['vad_score'];
+          if (score != null) {
+            _logger.d('VAD score: $score');
+          }
+
         default:
           _logger.d('Unhandled message type: $type');
       }
@@ -238,8 +289,7 @@ class ElevenLabsConversationService {
 
   void _setupPlayerListener() {
     _playerStateSubscription?.cancel();
-    _playerStateSubscription =
-        _audioPlayer.playerStateStream.listen((state) {
+    _playerStateSubscription = _audioPlayer.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed &&
           _agentSpeaking) {
         // Player finished all playlist items — wait briefly for more chunks
@@ -257,6 +307,7 @@ class ElevenLabsConversationService {
 
   void _handleAudioChunk(String base64Audio) {
     final bytes = base64Decode(base64Audio);
+    _playbackLevelController.add(_computeLevel(bytes));
     _audioOutputBuffer.addAll(bytes);
 
     if (!_agentSpeaking) {
@@ -360,6 +411,9 @@ class ElevenLabsConversationService {
     if (_agentSpeaking != speaking) {
       _agentSpeaking = speaking;
       _agentSpeakingController.add(speaking);
+      if (!speaking) {
+        _playbackLevelController.add(0.0);
+      }
     }
   }
 
@@ -375,6 +429,7 @@ class ElevenLabsConversationService {
     _audioOutputBuffer.clear();
     _resetPlaylist();
     _cleanupTempFiles();
+    _setAgentSpeaking(false);
 
     try {
       await _channel?.sink.close();
@@ -391,16 +446,35 @@ class ElevenLabsConversationService {
     await _statusController.close();
     await _userTranscriptController.close();
     await _agentResponseController.close();
+    await _agentResponseCorrectionController.close();
     await _agentSpeakingController.close();
+    await _playbackLevelController.close();
     await _errorController.close();
     await _audioPlayer.dispose();
   }
 
+  static double _computeLevel(List<int> pcmBytes) {
+    if (pcmBytes.length < 2) {
+      return 0.0;
+    }
+
+    final bytes = Uint8List.fromList(pcmBytes);
+    final samples = bytes.buffer.asInt16List();
+    if (samples.isEmpty) {
+      return 0.0;
+    }
+
+    var sum = 0.0;
+    for (final sample in samples) {
+      final normalized = sample / 32768.0;
+      sum += normalized * normalized;
+    }
+
+    return math.sqrt(sum / samples.length).clamp(0.0, 1.0).toDouble();
+  }
+
   /// Wrap raw PCM16 mono data in a WAV container.
-  static Uint8List _wrapPcmAsWav(
-    Uint8List pcmData, {
-    int sampleRate = 16000,
-  }) {
+  static Uint8List _wrapPcmAsWav(Uint8List pcmData, {int sampleRate = 16000}) {
     const numChannels = 1;
     const bitsPerSample = 16;
     final byteRate = sampleRate * numChannels * bitsPerSample ~/ 8;
