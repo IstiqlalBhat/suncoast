@@ -1,7 +1,1 @@
-{
-  "functions": {
-    "source": "firebase/functions",
-    "runtime": "nodejs20",
-    "codebase": "default"
-  }
-}
+{"functions":{"source":"firebase/functions","runtime":"nodejs20","codebase":"default"},"flutter":{"platforms":{"android":{"default":{"projectId":"alchemy-87529","appId":"1:172064286378:android:6285b3fb24a2c6a561d2d3","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"alchemy-87529","configurations":{"android":"1:172064286378:android:6285b3fb24a2c6a561d2d3"}}}}}}

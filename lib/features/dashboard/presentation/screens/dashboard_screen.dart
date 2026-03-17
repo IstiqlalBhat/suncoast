@@ -432,12 +432,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       itemCount: activities.length,
                       itemBuilder: (context, index) {
                         final activity = activities[index];
-                        return ActivityCard(
-                          activity: activity,
-                          onTap: () => _openActivity(activity),
-                          onMarkCompleted: () =>
-                              _markActivityCompleted(activity),
-                          onDelete: () => _confirmDeleteActivity(activity),
+                        return Dismissible(
+                          key: ValueKey(activity.id),
+                          direction: DismissDirection.endToStart,
+                          confirmDismiss: (_) async {
+                            await _confirmDeleteActivity(activity);
+                            return false;
+                          },
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 28),
+                            margin: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: c.error.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Icon(Icons.delete_outline,
+                                color: c.error, size: 26),
+                          ),
+                          child: ActivityCard(
+                            activity: activity,
+                            onTap: () => _openActivity(activity),
+                            onMarkCompleted: () =>
+                                _markActivityCompleted(activity),
+                            onDelete: () => _confirmDeleteActivity(activity),
+                          ),
                         );
                       },
                     ),
