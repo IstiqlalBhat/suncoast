@@ -15,6 +15,7 @@ import '../../../../shared/providers/app_providers.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../services/audio/audio_playback_service.dart';
 import '../../../../services/audio/audio_recording_service.dart';
+import '../../../../services/speech/apple_stt_service.dart';
 import '../../../../services/conversation/elevenlabs_conversation_service.dart';
 import '../../../../services/media/camera_service.dart';
 import '../../../../services/media/media_upload_service.dart';
@@ -41,6 +42,10 @@ final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
 
 final audioRecordingServiceProvider = Provider<AudioRecordingService>((ref) {
   return AudioRecordingService();
+});
+
+final appleSttServiceProvider = Provider<AppleSttService>((ref) {
+  return AppleSttService();
 });
 
 final audioPlaybackServiceProvider = Provider<AudioPlaybackService>((ref) {
@@ -132,6 +137,7 @@ final activeSessionProvider =
         apiClient: ref.watch(apiClientProvider),
         audioService: ref.watch(audioRecordingServiceProvider),
         audioPlaybackService: ref.watch(audioPlaybackServiceProvider),
+        appleSttService: ref.watch(appleSttServiceProvider),
         cameraService: ref.watch(cameraServiceProvider),
         mediaUploadService: ref.watch(mediaUploadServiceProvider),
         realtimeMediaService: ref.watch(openAiRealtimeMediaServiceProvider),
@@ -236,6 +242,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   final ApiClient _apiClient;
   final AudioRecordingService _audioService;
   final AudioPlaybackService _audioPlaybackService;
+  final AppleSttService _appleSttService;
   final CameraService _cameraService;
   final MediaUploadService _mediaUploadService;
   final OpenAiRealtimeMediaService _realtimeMediaService;
@@ -250,6 +257,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   StreamSubscription<double>? _amplitudeSub;
   StreamSubscription<List<int>>? _audioStreamSub;
   StreamSubscription<List<int>>? _interactiveAudioSub;
+  StreamSubscription<String>? _onDeviceSttSub;
+  StreamSubscription<double>? _onDeviceSoundLevelSub;
+  bool _isOnDeviceSttActive = false;
   final List<int> _audioBuffer = [];
   final List<int> _interactiveAudioBuffer = [];
   String _lastProcessedTranscript = '';
@@ -282,6 +292,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     required ApiClient apiClient,
     required AudioRecordingService audioService,
     required AudioPlaybackService audioPlaybackService,
+    required AppleSttService appleSttService,
     required CameraService cameraService,
     required MediaUploadService mediaUploadService,
     required OpenAiRealtimeMediaService realtimeMediaService,
@@ -292,6 +303,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
        _apiClient = apiClient,
        _audioService = audioService,
        _audioPlaybackService = audioPlaybackService,
+       _appleSttService = appleSttService,
        _cameraService = cameraService,
        _mediaUploadService = mediaUploadService,
        _realtimeMediaService = realtimeMediaService,
@@ -529,6 +541,64 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   Future<void> _startAudioPipeline() async {
+    final settings = _readSettings();
+    if (settings?.sttEngine == SttEngine.device) {
+      await _startOnDeviceSttPipeline();
+    } else {
+      await _startCloudSttPipeline();
+    }
+  }
+
+  Future<void> _startOnDeviceSttPipeline() async {
+    try {
+      final initialized = await _appleSttService.initialize();
+      if (!initialized) {
+        state = state.copyWith(
+          error: 'On-device speech recognition unavailable. '
+              'Check Settings > General > Keyboard > Dictation for language models.',
+        );
+        return;
+      }
+
+      _isOnDeviceSttActive = true;
+
+      // Subscribe to transcript stream
+      _onDeviceSttSub = _appleSttService.transcriptStream.listen(
+        (text) {
+          if (!mounted || state.isMuted || state.session == null) return;
+          final newTranscript = '${state.transcript} $text'.trim();
+          state = state.copyWith(transcript: newTranscript);
+          _repository.updateTranscript(state.session!.id, newTranscript);
+          _maybeProcessWithAI();
+        },
+        onError: (e) {
+          _logger.e('On-device STT transcript error: $e');
+        },
+      );
+
+      // Subscribe to sound level stream for waveform
+      _onDeviceSoundLevelSub = _appleSttService.soundLevelStream.listen(
+        (level) {
+          if (!state.isMuted) {
+            state = state.copyWith(audioLevel: level);
+          }
+        },
+      );
+
+      // Map language code to locale (e.g. 'en' -> 'en-US')
+      final settings = _readSettings();
+      final lang = settings?.language ?? 'en';
+      final locale = lang.contains('-') ? lang : '$lang-US';
+
+      await _appleSttService.startListening(locale: locale);
+      _logger.i('On-device STT pipeline started (locale=$locale)');
+    } catch (e) {
+      _logger.e('Failed to start on-device STT pipeline: $e');
+      state = state.copyWith(error: 'Failed to start on-device speech recognition: $e');
+    }
+  }
+
+  Future<void> _startCloudSttPipeline() async {
     try {
       final hasPermission = await _audioService.hasPermission();
       if (!hasPermission) {
@@ -557,9 +627,9 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
         (_) => _sendAudioChunk(),
       );
 
-      _logger.i('Audio pipeline started');
+      _logger.i('Cloud STT pipeline started');
     } catch (e) {
-      _logger.e('Failed to start audio pipeline: $e');
+      _logger.e('Failed to start cloud STT pipeline: $e');
       state = state.copyWith(error: 'Failed to start recording: $e');
     }
   }
@@ -2038,6 +2108,8 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     await _stopConversation();
     // Stop voice session if active
     await _stopVoiceSession();
+    // Stop on-device STT if active
+    await _stopOnDeviceStt();
 
     // Stop audio pipeline
     _transcriptionTimer?.cancel();
@@ -2050,7 +2122,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
 
     state = state.copyWith(isRecording: false, isProcessing: true);
 
-    // Send any remaining audio
+    // Send any remaining audio (cloud pipeline only)
     if (_audioBuffer.isNotEmpty) {
       await _sendAudioChunk();
     }
@@ -2085,9 +2157,22 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   }
 
   void toggleMute() {
-    state = state.copyWith(isMuted: !state.isMuted);
-    if (state.isMuted) {
+    final wasMuted = state.isMuted;
+    state = state.copyWith(isMuted: !wasMuted);
+    if (!wasMuted) {
+      // Now muted
       state = state.copyWith(audioLevel: 0.0);
+      if (_isOnDeviceSttActive) {
+        _appleSttService.stopListening();
+      }
+    } else {
+      // Now unmuted
+      if (_isOnDeviceSttActive) {
+        final settings = _readSettings();
+        final lang = settings?.language ?? 'en';
+        final locale = lang.contains('-') ? lang : '$lang-US';
+        _appleSttService.startListening(locale: locale);
+      }
     }
   }
 
@@ -2116,6 +2201,16 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     _voiceAudioSub = null;
     await _voiceService?.stop();
     _voiceService = null;
+  }
+
+  Future<void> _stopOnDeviceStt() async {
+    if (!_isOnDeviceSttActive) return;
+    _isOnDeviceSttActive = false;
+    await _onDeviceSttSub?.cancel();
+    _onDeviceSttSub = null;
+    await _onDeviceSoundLevelSub?.cancel();
+    _onDeviceSoundLevelSub = null;
+    await _appleSttService.stopListening();
   }
 
   Future<void> _stopConversation() async {
@@ -2149,6 +2244,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   void reset() {
     _stopConversation();
     _stopVoiceSession();
+    _stopOnDeviceStt();
     _realtimeMediaService.disconnect();
     _timer?.cancel();
     _transcriptionTimer?.cancel();
@@ -2174,6 +2270,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
   void dispose() {
     _stopConversation();
     _stopVoiceSession();
+    _stopOnDeviceStt();
     _voiceService?.dispose();
     _conversationService?.dispose();
     _realtimeMediaService.dispose();
@@ -2184,6 +2281,7 @@ class ActiveSessionNotifier extends StateNotifier<ActiveSessionState> {
     _amplitudeSub?.cancel();
     _audioService.dispose();
     _audioPlaybackService.dispose();
+    _appleSttService.dispose();
     super.dispose();
   }
 }

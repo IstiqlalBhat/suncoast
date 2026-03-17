@@ -51,6 +51,8 @@
 	<string>myEA uses Face ID for quick and secure sign-in to your account.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>myEA needs microphone access to record audio during sessions.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>myEA uses on-device speech recognition to transcribe your sessions privately without sending audio to the cloud.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>myEA needs camera access to capture photos and videos during sessions.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
